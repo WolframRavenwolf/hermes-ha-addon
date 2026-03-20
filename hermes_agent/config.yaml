@@ -53,4 +53,3 @@ schema:
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"
       value: "str"
-image: ghcr.io/wolframravenwolf/hermes-ha-addon/hermes-agent-{arch}
