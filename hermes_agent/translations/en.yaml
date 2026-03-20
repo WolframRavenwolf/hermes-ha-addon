@@ -1,0 +1,58 @@
+configuration:
+  install_source:
+    name: Install Source
+    description: >-
+      "git" clones the repo for editable install (agent can modify its own source).
+      "pypi" installs from PyPI (simpler, no self-modification).
+  git_url:
+    name: Git Repository URL
+    description: Hermes Agent git repository URL.
+  git_ref:
+    name: Git Branch / Tag
+    description: Branch, tag, or commit hash to check out.
+  git_token:
+    name: Git Token
+    description: Personal access token for private repositories (optional).
+  pypi_version:
+    name: PyPI Version
+    description: >-
+      Specific version to install from PyPI (e.g. "0.3.0").
+      Leave empty for latest. Only used when install source is "pypi".
+  auto_update:
+    name: Auto Update
+    description: >-
+      Pull latest changes from git on every restart.
+      Only applies to git install source.
+  timezone:
+    name: Timezone
+    description: Container timezone (e.g. "Europe/Berlin", "America/New_York").
+  force_ipv4_dns:
+    name: Force IPv4 DNS
+    description: Prefer IPv4 for DNS resolution (fixes issues on some networks).
+  enable_terminal:
+    name: Enable Terminal
+    description: Enable the web terminal (ttyd) for CLI access.
+  terminal_port:
+    name: Terminal Port
+    description: Port for direct ttyd access (bypassing ingress).
+  homeassistant_token:
+    name: Home Assistant Token
+    description: Long-lived access token for HA API integration (optional).
+  hass_url:
+    name: Home Assistant URL
+    description: Home Assistant base URL for API access.
+  auto_configure_hass:
+    name: Auto Configure HA
+    description: >-
+      Automatically inject HASS_TOKEN and HASS_URL into Hermes environment
+      on startup.
+  nginx_log_level:
+    name: Nginx Log Level
+    description: >-
+      "off" disables access logs. "minimal" suppresses health check noise.
+      "full" logs everything.
+  env_vars:
+    name: Environment Variables
+    description: >-
+      Additional environment variables to pass to Hermes.
+      Use for API keys and custom configuration.

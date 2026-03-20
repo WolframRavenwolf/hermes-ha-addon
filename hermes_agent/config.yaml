@@ -1,0 +1,56 @@
+name: Hermes Agent
+version: "0.1.0"
+slug: hermes_agent
+description: "NousResearch Hermes Agent - persistent AI agent with memory, skills, and multi-platform messaging"
+url: "https://github.com/NousResearch/hermes-agent"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+ingress: true
+ingress_port: 48099
+panel_icon: mdi:robot-outline
+panel_title: Hermes Agent
+map:
+  - type: config
+    read_only: false
+ports:
+  7681/tcp: null
+ports_description:
+  7681/tcp: "ttyd terminal (direct access, optional)"
+options:
+  install_source: git
+  git_url: "https://github.com/NousResearch/hermes-agent.git"
+  git_ref: "main"
+  git_token: ""
+  pypi_version: ""
+  auto_update: false
+  timezone: "Europe/Berlin"
+  force_ipv4_dns: true
+  enable_terminal: true
+  terminal_port: 7681
+  homeassistant_token: ""
+  hass_url: "http://homeassistant.local:8123"
+  auto_configure_hass: false
+  nginx_log_level: "minimal"
+  env_vars: []
+schema:
+  install_source: "list(git|pypi)"
+  git_url: "url?"
+  git_ref: "str?"
+  git_token: "password?"
+  pypi_version: "str?"
+  auto_update: "bool"
+  timezone: "str"
+  force_ipv4_dns: "bool"
+  enable_terminal: "bool"
+  terminal_port: "port"
+  homeassistant_token: "password?"
+  hass_url: "url?"
+  auto_configure_hass: "bool"
+  nginx_log_level: "list(off|minimal|full)"
+  env_vars:
+    - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"
+      value: "str"
+image: ghcr.io/wolframravenwolf/hermes-ha-addon/hermes-agent-{arch}
