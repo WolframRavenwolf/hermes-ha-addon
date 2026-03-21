@@ -293,7 +293,7 @@ echo "[run] Nginx configured (port: $NGINX_PORT, log level: $NGINX_LOG_LEVEL)"
 
 # ── Section 9: Start services ───────────────────────────────────────
 # Get dynamically assigned ingress port from Supervisor API
-INGRESS_PORT=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN:-}" http://supervisor/addons/self/info 2>/dev/null | jq -r '.data.ingress_port' 2>/dev/null)
+INGRESS_PORT=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN:-}" http://supervisor/addons/self/info 2>/dev/null | jq -r '.data.ingress_port' 2>/dev/null) || true
 if [ -z "$INGRESS_PORT" ] || [ "$INGRESS_PORT" = "null" ]; then
     echo "[run] Warning: Could not get ingress port from Supervisor, falling back to 48099"
     INGRESS_PORT=48099
