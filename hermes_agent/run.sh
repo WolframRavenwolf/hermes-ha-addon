@@ -101,6 +101,18 @@ if [ -d "$BREW_PERSIST/bin" ]; then
     export PATH="$BREW_PERSIST/bin:$BREW_PERSIST/sbin:$PATH"
 fi
 
+# Terminal environment: auto-activate venv + paths for login shells
+cat > /etc/profile.d/hermes.sh << PROFILE
+export HERMES_HOME="$HERMES_HOME"
+export GOPATH="$GO_DIR"
+export GOBIN="$GO_DIR/bin"
+export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
+export PATH="$VENV_DIR/bin:$GO_DIR/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
+cd "$HERMES_HOME"
+# Source persistent user profile if it exists (agent/user customizations)
+[ -f "$HERMES_HOME/profile.sh" ] && . "$HERMES_HOME/profile.sh"
+PROFILE
+
 # ── Section 5: Hermes installation ──────────────────────────────────
 MARKER_FILE="$HERMES_HOME/.install_marker"
 
