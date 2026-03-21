@@ -29,11 +29,6 @@ configuration:
   hass_url:
     name: Home Assistant URL
     description: Home Assistant base URL for API access.
-  nginx_log_level:
-    name: Nginx Log Level
-    description: >-
-      "off" disables access logs. "minimal" suppresses health check noise.
-      "full" logs everything.
   env_vars:
     name: Environment Variables
     description: >-

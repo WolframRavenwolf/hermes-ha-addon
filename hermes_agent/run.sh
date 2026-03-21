@@ -23,7 +23,6 @@ FORCE_IPV4=$(opt_bool force_ipv4_dns)
 AUTO_SETUP=$(opt_bool auto_setup)
 HASS_TOKEN=$(opt homeassistant_token)
 HASS_URL=$(opt hass_url)
-NGINX_LOG_LEVEL=$(opt nginx_log_level)
 
 # ── Section 3: System setup ─────────────────────────────────────────
 # Timezone (reject path traversal)
@@ -293,21 +292,12 @@ fi
 # ── Section 8: Render nginx config (for future API proxy) ───────────
 NGINX_PORT=8099
 
-# Compute access log directive
-case "$NGINX_LOG_LEVEL" in
-    off)  ACCESS_LOG_DIRECTIVE="access_log off;" ;;
-    full) ACCESS_LOG_DIRECTIVE="access_log /dev/stdout;" ;;
-    *)    ACCESS_LOG_DIRECTIVE='access_log /dev/stdout minimal;' ;;
-esac
-
 cp /etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf
 sed -i \
     -e "s|%%NGINX_PORT%%|${NGINX_PORT}|g" \
-    -e "s|%%NGINX_LOG_LEVEL%%|${NGINX_LOG_LEVEL}|g" \
-    -e "s|%%ACCESS_LOG_DIRECTIVE%%|${ACCESS_LOG_DIRECTIVE}|g" \
     /etc/nginx/nginx.conf
 
-echo "[run] Nginx configured (port: $NGINX_PORT, log level: $NGINX_LOG_LEVEL)"
+echo "[run] Nginx configured (port: $NGINX_PORT)"
 
 # ── Section 9: Start services ───────────────────────────────────────
 # Read Supervisor token (s6-overlay stores runtime env in files, not in process env)

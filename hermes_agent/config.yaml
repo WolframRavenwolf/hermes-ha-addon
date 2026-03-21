@@ -1,5 +1,5 @@
 name: Hermes Agent
-version: "0.3.1"
+version: "0.3.2"
 slug: hermes_agent
 description: "NousResearch Hermes Agent - persistent AI agent with memory, skills, and multi-platform messaging"
 url: "https://github.com/NousResearch/hermes-agent"
@@ -28,7 +28,6 @@ options:
   auto_setup: true
   homeassistant_token: ""
   hass_url: "http://homeassistant.local:8123"
-  nginx_log_level: "minimal"
   env_vars: []
 schema:
   git_url: "url?"
@@ -40,7 +39,6 @@ schema:
   auto_setup: "bool"
   homeassistant_token: "password?"
   hass_url: "url?"
-  nginx_log_level: "list(off|minimal|full)"
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"
       value: "str"

@@ -13,9 +13,7 @@ http {
     keepalive_timeout 65;
 
     log_format minimal '$remote_addr - $request_uri $status';
-
-    # %%NGINX_LOG_LEVEL%%: off / minimal / full
-    %%ACCESS_LOG_DIRECTIVE%%
+    access_log /dev/stdout minimal;
 
     server {
         listen %%NGINX_PORT%% default_server;
