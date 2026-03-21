@@ -17,10 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
         # Networking / dev tools
         nginx git curl wget jq ripgrep fd-find rsync tmux \
-        openssh-client vim nano procps less unzip \
+        openssh-client vim nano procps less unzip zip tree \
+        bat dnsutils netcat-openbsd \
         # Homebrew deps
         file \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/batcat /usr/local/bin/bat
 
 ENV LANG=C.UTF-8 \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
@@ -33,7 +35,15 @@ ENV UV_LINK_MODE=copy
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g npm@latest
+    && npm install -g npm@latest agent-browser
+
+# ── GitHub CLI ───────────────────────────────────────────────────────
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Go 1.22 ─────────────────────────────────────────────────────────
 RUN ARCH=$(dpkg --print-architecture) \

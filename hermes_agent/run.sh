@@ -93,7 +93,7 @@ export HERMES_HOME="$HERMES_HOME"
 export GOPATH="$GO_DIR"
 export GOBIN="$GO_DIR/bin"
 export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
-export PATH="$VENV_DIR/bin:$GO_DIR/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
+export PATH="$VENV_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
 cd "$HERMES_HOME"
 # Auto-run setup wizard if no provider is configured yet
 if [ "$AUTO_SETUP" = "true" ] && ! python3 -c "from hermes_cli.main import _has_any_provider_configured; exit(0 if _has_any_provider_configured() else 1)" 2>/dev/null; then
@@ -235,6 +235,17 @@ if [ ! -f "$HERMES_HOME/memories/USER.md" ]; then
 USR
     echo "[run] Created default USER.md"
 fi
+
+# tmux config (persistent, user-editable)
+if [ ! -f "$HERMES_HOME/.tmux.conf" ]; then
+    cat > "$HERMES_HOME/.tmux.conf" << 'TMUX'
+set -g mouse on
+set -g history-limit 50000
+set -g default-terminal "tmux-256color"
+TMUX
+    echo "[run] Created default .tmux.conf"
+fi
+ln -snf "$HERMES_HOME/.tmux.conf" /root/.tmux.conf
 
 # ── Section 7: Environment variable passthrough ─────────────────────
 # Reserved names that cannot be overridden
