@@ -19,8 +19,13 @@
   .btn.green{background:#059669}
   .btn.small{padding:5px 10px;font-size:12px}
   .btn:hover{filter:brightness(1.15)}
-  .term{flex:1;min-height:200px;border:1px solid #1f2937;border-radius:8px;overflow:hidden}
-  iframe{width:100%;height:100%;border:0;background:black}
+  .btn.active{outline:2px solid #60a5fa;outline-offset:1px}
+  .term{flex:1;min-height:200px;border:1px solid #1f2937;border-radius:8px;overflow:hidden;position:relative}
+  .term iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;background:black}
+  .term iframe.hidden{display:none}
+  body.maximized .header,body.maximized .toolbar{display:none}
+  body.maximized .term{border:0;border-radius:0}
+  body.maximized{padding:0;gap:0}
 </style>
 </head>
 <body>
@@ -35,35 +40,44 @@
 </div>
 
 <div class="toolbar">
-  <button class="btn" onclick="setMode('hermes')">Hermes</button>
-  <button class="btn secondary" onclick="setMode('terminal')">Terminal</button>
-  <button class="btn small secondary" onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
+  <button class="btn active" id="btnHermes" onclick="setMode('hermes')">Hermes</button>
+  <button class="btn secondary" id="btnTerminal" onclick="setMode('terminal')">Terminal</button>
+  <button class="btn small secondary" id="btnMax" onclick="toggleMax()">&#x26F6; Maximize</button>
   <a class="btn green small" href="./cert/ca.crt" download="hermes-agent-ca.crt">&#x1F512; CA Cert</a>
 </div>
 
 <div class="term" id="termContainer">
-  <iframe id="termFrame" src="./hermes/" title="Hermes Agent"></iframe>
+  <iframe id="frameHermes" src="./hermes/" title="Hermes Agent"></iframe>
+  <iframe id="frameTerminal" src="./terminal/" title="Terminal" class="hidden"></iframe>
 </div>
 
 <script>
 (function() {
-  var frame = document.getElementById('termFrame');
-  var container = document.getElementById('termContainer');
+  var frameHermes = document.getElementById('frameHermes');
+  var frameTerminal = document.getElementById('frameTerminal');
+  var btnHermes = document.getElementById('btnHermes');
+  var btnTerminal = document.getElementById('btnTerminal');
+  var current = 'hermes';
 
   window.setMode = function(mode) {
-    var src = './' + mode + '/';
-    if (frame.src !== src && !frame.src.endsWith(src)) {
-      frame.src = src;
-    }
+    if (mode === current) return;
+    current = mode;
+    frameHermes.className = mode === 'hermes' ? '' : 'hidden';
+    frameTerminal.className = mode === 'terminal' ? '' : 'hidden';
+    btnHermes.className = mode === 'hermes' ? 'btn active' : 'btn secondary';
+    btnTerminal.className = mode === 'terminal' ? 'btn active' : 'btn secondary';
   };
 
-  window.toggleFullscreen = function() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      container.requestFullscreen().catch(function(){});
-    }
+  window.toggleMax = function() {
+    document.body.classList.toggle('maximized');
   };
+
+  // Escape key exits maximize
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.body.classList.contains('maximized')) {
+      document.body.classList.remove('maximized');
+    }
+  });
 
   // Status checks
   var s = document.getElementById('statusSecure');
