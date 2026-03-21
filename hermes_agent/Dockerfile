@@ -77,6 +77,7 @@ ENV HOMEBREW_IMAGE_PREFIX="/home/linuxbrew/.linuxbrew"
 # ── Addon files ──────────────────────────────────────────────────────
 COPY run.sh /
 COPY nginx.conf.tpl /etc/nginx/nginx.conf.tpl
+COPY landing.html.tpl /var/www/landing.html.tpl
 COPY brew-wrapper.sh /usr/local/bin/brew-wrapper
 RUN chmod +x /run.sh /usr/local/bin/brew-wrapper
 

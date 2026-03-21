@@ -1,4 +1,9 @@
 configuration:
+  hermes_home:
+    name: Hermes Home Directory
+    description: >-
+      Directory name for Hermes Agent data (relative to /config).
+      Default ".hermes". Change to e.g. "amy" for /config/amy/.
   git_url:
     name: Git Repository URL
     description: Hermes Agent git repository URL.
@@ -18,11 +23,6 @@ configuration:
   force_ipv4_dns:
     name: Force IPv4 DNS
     description: Prefer IPv4 for DNS resolution (fixes issues on some networks).
-  auto_setup:
-    name: Auto Setup
-    description: >-
-      Launch the interactive setup wizard on first terminal login
-      if Hermes Agent has not been configured yet.
   homeassistant_token:
     name: Home Assistant Token
     description: Long-lived access token for HA API integration (optional).

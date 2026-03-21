@@ -14,17 +14,17 @@ fi
 opt() { jq -r ".${1} // empty" "$OPTIONS_FILE"; }
 opt_bool() { jq -r ".${1} // false" "$OPTIONS_FILE"; }
 
+HERMES_HOME_REL=$(opt hermes_home)
 GIT_URL=$(opt git_url)
 GIT_REF=$(opt git_ref)
 GIT_TOKEN=$(opt git_token)
 AUTO_UPDATE=$(opt_bool auto_update)
 TIMEZONE=$(opt timezone)
 FORCE_IPV4=$(opt_bool force_ipv4_dns)
-AUTO_SETUP=$(opt_bool auto_setup)
 HASS_TOKEN=$(opt homeassistant_token)
 HASS_URL=$(opt hass_url)
 
-# ── Section 3: System setup ─────────────────────────────────────────
+# ── Section 2: System setup ─────────────────────────────────────────
 # Timezone (reject path traversal)
 if [ -n "$TIMEZONE" ] && [[ "$TIMEZONE" != *..* ]] && [ -f "/usr/share/zoneinfo/$TIMEZONE" ]; then
     ln -snf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
@@ -41,26 +41,33 @@ if [ "$FORCE_IPV4" = "true" ]; then
 fi
 
 # Core paths
-export HERMES_HOME="/config/.hermes"
+export HERMES_HOME="/config/${HERMES_HOME_REL:-.hermes}"
 export HOME="/root"
+echo "[run] HERMES_HOME: $HERMES_HOME"
 
-# ── Section 4: Persistent storage setup ─────────────────────────────
+# ── Section 3: Persistent storage setup ──────────────────────────────
 SRC_DIR="/config/hermes-agent"
 VENV_DIR="$HERMES_HOME/venv"
 WORKSPACE_DIR="$HERMES_HOME/workspace"
 BREW_PERSIST="/config/.linuxbrew"
 NODE_GLOBAL="/config/.node_global"
 GO_DIR="/config/.go"
+CERTS_DIR="/config/certs"
+TTYD_TERMINAL_PORT=7681
+TTYD_HERMES_PORT=7682
+INGRESS_PORT=48099
+HTTP_PORT=8080
+HTTPS_PORT=8443
 
 # Create persistent directories
 for d in "$HERMES_HOME" "$HERMES_HOME/memories" "$HERMES_HOME/skills" \
          "$HERMES_HOME/plugins" "$HERMES_HOME/sessions" "$HERMES_HOME/cron" \
          "$HERMES_HOME/logs" "$WORKSPACE_DIR" \
-         "$NODE_GLOBAL/lib" "$GO_DIR/bin"; do
+         "$NODE_GLOBAL/lib" "$GO_DIR/bin" "$CERTS_DIR"; do
     mkdir -p "$d"
 done
 
-# Symlink ~/.hermes -> /config/.hermes
+# Symlink ~/.hermes -> HERMES_HOME
 ln -snf "$HERMES_HOME" "$HOME/.hermes"
 
 # Go
@@ -86,26 +93,35 @@ if [ -d "$BREW_PERSIST/bin" ]; then
     export PATH="$BREW_PERSIST/bin:$BREW_PERSIST/sbin:$PATH"
 fi
 
-# Terminal environment: auto-activate venv + paths for login shells
-cat > /etc/profile.d/hermes.sh << PROFILE
+# ── Section 4: Shell environment ─────────────────────────────────────
+# .bashrc: paths + variables for ALL shells (login and non-login)
+cat > /root/.bashrc << BASHRC
 export HERMES_HOME="$HERMES_HOME"
 export GOPATH="$GO_DIR"
 export GOBIN="$GO_DIR/bin"
 export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
 export PATH="$VENV_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
 cd "$HERMES_HOME"
-# Auto-run setup wizard if no provider is configured yet
-if [ "$AUTO_SETUP" = "true" ] && ! python3 -c "from hermes_cli.main import _has_any_provider_configured; exit(0 if _has_any_provider_configured() else 1)" 2>/dev/null; then
-    echo "Hermes isn't configured yet. Running setup now."
-    echo "(You can run 'hermes setup' at any time to configure.)"
-    echo ""
-    hermes setup
-fi
 # Source persistent user profile if it exists (agent/user customizations)
 [ -f "$HERMES_HOME/profile.sh" ] && . "$HERMES_HOME/profile.sh"
+BASHRC
+
+# profile.d: hermes autostart for LOGIN shells only
+cat > /etc/profile.d/hermes.sh << 'PROFILE'
+# Source .bashrc for paths (login shells don't source it by default in some setups)
+[ -f /root/.bashrc ] && . /root/.bashrc
+# Start hermes — clean exit ends session, crash drops to shell
+hermes
+_exit=$?
+if [ $_exit -eq 0 ]; then
+    exit 0
+fi
+echo ""
+echo "Hermes exited with code $_exit. Shell is available for debugging."
+echo "Run 'hermes' to restart, or 'exit' to close this session."
 PROFILE
 
-# ── Section 5: Hermes installation ──────────────────────────────────
+# ── Section 5: Hermes installation ───────────────────────────────────
 MARKER_FILE="$HERMES_HOME/.install_marker"
 
 compute_marker() {
@@ -253,7 +269,7 @@ TMUX
 fi
 ln -snf "$HERMES_HOME/.tmux.conf" /root/.tmux.conf
 
-# ── Section 7: Environment variable passthrough ─────────────────────
+# ── Section 7: Environment variable passthrough ──────────────────────
 # Reserved names that cannot be overridden
 RESERVED_VARS="HOME|PATH|LD_LIBRARY_PATH|LD_PRELOAD|PYTHONPATH|PYTHONHOME|UV_TOOL_DIR|UV_CACHE_DIR|HERMES_HOME|VIRTUAL_ENV|SHELL|USER|TERM|LANG|LC_ALL"
 
@@ -289,60 +305,88 @@ if [ -f "$HERMES_HOME/.env" ]; then
     set +a
 fi
 
-# ── Section 8: Render nginx config (for future API proxy) ───────────
-NGINX_PORT=8099
+# ── Section 8: TLS certificates ──────────────────────────────────────
+if [ ! -f "$CERTS_DIR/server.crt" ]; then
+    echo "[run] Generating self-signed TLS certificates..."
+    # CA
+    openssl req -x509 -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+        -keyout "$CERTS_DIR/ca.key" -out "$CERTS_DIR/ca.crt" \
+        -days 3650 -subj "/CN=Hermes Agent CA" 2>/dev/null
+    # Server cert signed by CA
+    openssl req -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+        -keyout "$CERTS_DIR/server.key" -out /tmp/server.csr \
+        -subj "/CN=hermes-agent" 2>/dev/null
+    # SAN: localhost + common LAN hostnames
+    LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+    openssl x509 -req -in /tmp/server.csr \
+        -CA "$CERTS_DIR/ca.crt" -CAkey "$CERTS_DIR/ca.key" \
+        -CAcreateserial -out "$CERTS_DIR/server.crt" \
+        -days 3650 -extfile <(printf "subjectAltName=DNS:hermes-agent,DNS:localhost,IP:127.0.0.1,IP:%s" "$LAN_IP") 2>/dev/null
+    rm -f /tmp/server.csr "$CERTS_DIR/ca.srl"
+    chmod 600 "$CERTS_DIR/server.key" "$CERTS_DIR/ca.key"
+    echo "[run] TLS certificates generated (CA + server)"
+    echo "[run] Install $CERTS_DIR/ca.crt on clients to avoid browser warnings"
+else
+    echo "[run] TLS certificates: using existing"
+fi
 
+# ── Section 9: Render nginx config ───────────────────────────────────
 cp /etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf
 sed -i \
-    -e "s|%%NGINX_PORT%%|${NGINX_PORT}|g" \
+    -e "s|%%INGRESS_PORT%%|${INGRESS_PORT}|g" \
+    -e "s|%%HTTP_PORT%%|${HTTP_PORT}|g" \
+    -e "s|%%HTTPS_PORT%%|${HTTPS_PORT}|g" \
+    -e "s|%%TTYD_TERMINAL_PORT%%|${TTYD_TERMINAL_PORT}|g" \
+    -e "s|%%TTYD_HERMES_PORT%%|${TTYD_HERMES_PORT}|g" \
+    -e "s|%%CERTS_DIR%%|${CERTS_DIR}|g" \
+    -e "s|%%HERMES_VERSION%%|${HERMES_VERSION}|g" \
     /etc/nginx/nginx.conf
 
-echo "[run] Nginx configured (port: $NGINX_PORT)"
+# Render landing page
+cp /var/www/landing.html.tpl /var/www/landing.html
+sed -i \
+    -e "s|%%HERMES_VERSION%%|${HERMES_VERSION}|g" \
+    /var/www/landing.html
 
-# ── Section 9: Start services ───────────────────────────────────────
-# Read Supervisor token (s6-overlay stores runtime env in files, not in process env)
-export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN:-$(cat /var/run/s6/container_environment/SUPERVISOR_TOKEN 2>/dev/null || echo '')}"
+echo "[run] Nginx configured (ingress: $INGRESS_PORT, HTTP: $HTTP_PORT, HTTPS: $HTTPS_PORT)"
 
-# Get dynamically assigned ingress port from Supervisor API (retry up to 30s)
-INGRESS_PORT=""
-for i in $(seq 1 30); do
-    INGRESS_PORT=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info 2>/dev/null | jq -r '.data.ingress_port' 2>/dev/null) || true
-    if [ -n "$INGRESS_PORT" ] && [ "$INGRESS_PORT" != "null" ] && [ "$INGRESS_PORT" != "0" ]; then
-        break
-    fi
-    echo "[run] Waiting for Supervisor API... ($i/30)"
-    sleep 1
-done
-if [ -z "$INGRESS_PORT" ] || [ "$INGRESS_PORT" = "null" ] || [ "$INGRESS_PORT" = "0" ]; then
-    echo "[run] FATAL: Could not get ingress port from Supervisor after 30 attempts"
-    exit 1
-fi
-echo "[run] Ingress port: $INGRESS_PORT"
+# ── Section 10: Start services ───────────────────────────────────────
 GATEWAY_PID=""
-TTYD_PID=""
+TTYD_TERMINAL_PID=""
+TTYD_HERMES_PID=""
 NGINX_PID=""
 
 start_gateway() {
     echo "[run] Starting Hermes gateway..."
     cd "$HERMES_HOME"
-    hermes gateway >> "$HERMES_HOME/logs/gateway.log" 2>&1 &
+    hermes gateway run >> "$HERMES_HOME/logs/gateway.log" 2>&1 &
     GATEWAY_PID=$!
     echo "[run] Gateway started (PID: $GATEWAY_PID)"
 }
 
 start_ttyd() {
-    echo "[run] Starting ttyd on ingress port ${INGRESS_PORT}..."
-    cd /root
+    echo "[run] Starting ttyd (terminal: ${TTYD_TERMINAL_PORT}, hermes: ${TTYD_HERMES_PORT})..."
+    # Terminal: non-login shell (shell pur)
     ttyd \
-        --port "${INGRESS_PORT}" \
+        --port "${TTYD_TERMINAL_PORT}" \
+        --interface 127.0.0.1 \
+        --base-path /terminal/ \
+        --writable \
+        tmux -u new -A -s terminal /usr/bin/bash &
+    TTYD_TERMINAL_PID=$!
+    # Hermes: login shell (exec hermes via profile.d)
+    ttyd \
+        --port "${TTYD_HERMES_PORT}" \
+        --interface 127.0.0.1 \
+        --base-path /hermes/ \
         --writable \
         tmux -u new -A -s hermes /usr/bin/bash -l &
-    TTYD_PID=$!
-    echo "[run] ttyd started (PID: $TTYD_PID)"
+    TTYD_HERMES_PID=$!
+    echo "[run] ttyd started (terminal PID: $TTYD_TERMINAL_PID, hermes PID: $TTYD_HERMES_PID)"
 }
 
 start_nginx() {
-    echo "[run] Starting nginx on port ${NGINX_PORT}..."
+    echo "[run] Starting nginx..."
     nginx -g 'daemon off;' &
     NGINX_PID=$!
     echo "[run] nginx started (PID: $NGINX_PID)"
@@ -359,11 +403,13 @@ echo "[run] All services started"
 echo "─────────────────────────────────────────────"
 echo " ${HERMES_VERSION}"
 echo " Gateway PID: ${GATEWAY_PID}"
-echo " Terminal:    ingress (tmux session 'hermes')"
-echo " Nginx:       port ${NGINX_PORT} (API proxy)"
+echo " Terminal:    http://localhost:${HTTP_PORT}/terminal/"
+echo " API:         http://localhost:${HTTP_PORT}/v1/"
+echo " HTTPS:       https://localhost:${HTTPS_PORT}/"
+echo " HA Ingress:  sidebar (landing page)"
 echo "─────────────────────────────────────────────"
 
-# ── Section 10: Signal handling ──────────────────────────────────────
+# ── Section 11: Signal handling ──────────────────────────────────────
 shutdown() {
     echo ""
     echo "[run] Shutting down..."
@@ -372,13 +418,14 @@ shutdown() {
         kill "$NGINX_PID" 2>/dev/null
         echo "[run] nginx stopped"
     fi
-    if [ -n "$TTYD_PID" ] && kill -0 "$TTYD_PID" 2>/dev/null; then
-        kill "$TTYD_PID" 2>/dev/null
-        echo "[run] ttyd stopped"
-    fi
+    for pid in "$TTYD_TERMINAL_PID" "$TTYD_HERMES_PID"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+        fi
+    done
+    echo "[run] ttyd stopped"
     if [ -n "$GATEWAY_PID" ] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
         kill -TERM "$GATEWAY_PID" 2>/dev/null
-        # Grace period
         local waited=0
         while kill -0 "$GATEWAY_PID" 2>/dev/null && [ $waited -lt 10 ]; do
             sleep 1
@@ -394,9 +441,8 @@ shutdown() {
     exit 0
 }
 
-# ── Section 11: Supervisor loop ──────────────────────────────────────
+# ── Section 12: Supervisor loop ──────────────────────────────────────
 while true; do
-    # Wait for gateway process
     if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
         set +e; wait "$GATEWAY_PID" 2>/dev/null; EXIT_CODE=$?; set -e
         if [ $EXIT_CODE -eq 0 ]; then
