@@ -97,8 +97,8 @@ export PATH="$VENV_DIR/bin:$GO_DIR/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_
 cd "$HERMES_HOME"
 # Auto-run setup wizard if no provider is configured yet
 if [ "$AUTO_SETUP" = "true" ] && ! python3 -c "from hermes_cli.main import _has_any_provider_configured; exit(0 if _has_any_provider_configured() else 1)" 2>/dev/null; then
-    echo "Hermes Agent is not configured yet. Starting setup wizard..."
-    echo "(To re-run later: hermes setup)"
+    echo "Hermes isn't configured yet. Running setup now."
+    echo "(You can run 'hermes setup' at any time to configure.)"
     echo ""
     hermes setup
 fi
