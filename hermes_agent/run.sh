@@ -20,6 +20,7 @@ GIT_TOKEN=$(opt git_token)
 AUTO_UPDATE=$(opt_bool auto_update)
 TIMEZONE=$(opt timezone)
 FORCE_IPV4=$(opt_bool force_ipv4_dns)
+AUTO_SETUP=$(opt_bool auto_setup)
 TERMINAL_PORT=$(opt terminal_port)
 HASS_TOKEN=$(opt homeassistant_token)
 HASS_URL=$(opt hass_url)
@@ -109,6 +110,13 @@ export GOBIN="$GO_DIR/bin"
 export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
 export PATH="$VENV_DIR/bin:$GO_DIR/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
 cd "$HERMES_HOME"
+# Auto-run setup wizard on first login if not yet done
+if [ "$AUTO_SETUP" = "true" ] && [ ! -f "$HERMES_HOME/.hermes_agent_setup_successful" ]; then
+    echo "Hermes Agent is not configured yet. Starting setup wizard..."
+    echo "(To re-run later: hermes setup | To suppress: touch ~/.hermes/.hermes_agent_setup_successful)"
+    echo ""
+    hermes setup && touch "$HERMES_HOME/.hermes_agent_setup_successful"
+fi
 # Source persistent user profile if it exists (agent/user customizations)
 [ -f "$HERMES_HOME/profile.sh" ] && . "$HERMES_HOME/profile.sh"
 PROFILE
@@ -306,7 +314,6 @@ sed -i \
     -e "s|%%TERMINAL_STATUS%%|${TERMINAL_STATUS}|g" \
     -e "s|%%TERMINAL_STATUS_CLASS%%|${TERMINAL_STATUS_CLASS}|g" \
     -e "s|%%TERMINAL_BTN_CLASS%%|${TERMINAL_BTN_CLASS}|g" \
-    -e "s|%%INSTALL_SOURCE%%|git|g" \
     /var/www/landing.html
 
 # Render nginx config

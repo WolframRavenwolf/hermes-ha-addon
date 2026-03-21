@@ -18,6 +18,11 @@ configuration:
   force_ipv4_dns:
     name: Force IPv4 DNS
     description: Prefer IPv4 for DNS resolution (fixes issues on some networks).
+  auto_setup:
+    name: Auto Setup
+    description: >-
+      Launch the interactive setup wizard on first terminal login
+      if Hermes Agent has not been configured yet.
   terminal_port:
     name: Terminal Port
     description: >-

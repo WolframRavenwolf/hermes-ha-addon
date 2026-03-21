@@ -33,7 +33,6 @@
     <div class="row"><span class="label">Version</span><span class="value">%%HERMES_VERSION%%</span></div>
     <div class="row"><span class="label">Gateway</span><span class="value status-ok">Running</span></div>
     <div class="row"><span class="label">Terminal</span><span class="value %%TERMINAL_STATUS_CLASS%%">%%TERMINAL_STATUS%%</span></div>
-    <div class="row"><span class="label">Install</span><span class="value">%%INSTALL_SOURCE%%</span></div>
   </div>
 
   <div class="card">
