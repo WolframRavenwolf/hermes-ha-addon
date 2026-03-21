@@ -43,7 +43,7 @@
     <div class="row"><span class="label">3. Configure model &amp; platforms</span></div>
   </div>
 
-  <a class="btn %%TERMINAL_BTN_CLASS%%" href="%%INGRESS_ENTRY%%terminal/">Open Terminal</a>
+  <a class="btn %%TERMINAL_BTN_CLASS%%" href="./terminal/">Open Terminal</a>
 </div>
 </body>
 </html>

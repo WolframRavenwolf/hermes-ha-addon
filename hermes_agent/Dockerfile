@@ -43,15 +43,19 @@ RUN ARCH=$(dpkg --print-architecture) \
         | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# ── ttyd ─────────────────────────────────────────────────────────────
+# ── ttyd (compiled from source for glibc forkpty) ────────────────────
 ARG TTYD_VERSION=1.7.7
-RUN ARCH=$(dpkg --print-architecture) \
-    && if [ "$ARCH" = "amd64" ]; then TTYD_ARCH="x86_64"; \
-       elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then TTYD_ARCH="aarch64"; \
-       else echo "Unsupported arch: $ARCH" && exit 1; fi \
-    && curl -fsSL -o /usr/local/bin/ttyd \
-        "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${TTYD_ARCH}" \
-    && chmod +x /usr/local/bin/ttyd
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake libjson-c-dev libwebsockets-dev \
+    && git clone --branch "$TTYD_VERSION" --depth 1 \
+        https://github.com/tsl0922/ttyd.git /tmp/ttyd \
+    && cd /tmp/ttyd && mkdir build && cd build \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release \
+    && make -j"$(nproc)" && make install \
+    && rm -rf /tmp/ttyd \
+    && apt-get purge -y cmake \
+    && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* \
+    && ttyd --version
 
 # ── Homebrew (Linuxbrew) ────────────────────────────────────────────
 RUN useradd -r -m -s /bin/bash -d /home/linuxbrew linuxbrew \

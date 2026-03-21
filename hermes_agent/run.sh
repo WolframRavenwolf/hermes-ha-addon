@@ -294,7 +294,6 @@ sed -i \
     -e "s|%%TERMINAL_STATUS%%|${TERMINAL_STATUS}|g" \
     -e "s|%%TERMINAL_STATUS_CLASS%%|${TERMINAL_STATUS_CLASS}|g" \
     -e "s|%%TERMINAL_BTN_CLASS%%|${TERMINAL_BTN_CLASS}|g" \
-    -e "s|%%INGRESS_ENTRY%%|${INGRESS_ENTRY}|g" \
     -e "s|%%INSTALL_SOURCE%%|git|g" \
     /var/www/landing.html
 
@@ -329,10 +328,9 @@ start_ttyd() {
         ttyd \
             --port "${TERMINAL_PORT}" \
             --interface 127.0.0.1 \
+            --base-path /terminal/ \
             --writable \
-            --title "Hermes Agent" \
-            --terminal-type xterm-256color \
-            /bin/bash -l &
+            /usr/bin/bash -l &
         TTYD_PID=$!
         echo "[run] ttyd started (PID: $TTYD_PID)"
     else
