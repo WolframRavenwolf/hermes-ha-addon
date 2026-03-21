@@ -95,12 +95,12 @@ export GOBIN="$GO_DIR/bin"
 export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
 export PATH="$VENV_DIR/bin:$GO_DIR/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
 cd "$HERMES_HOME"
-# Auto-run setup wizard on first login if not yet done
-if [ "$AUTO_SETUP" = "true" ] && [ ! -f "$HERMES_HOME/.hermes_agent_setup_successful" ]; then
+# Auto-run setup wizard if no provider is configured yet
+if [ "$AUTO_SETUP" = "true" ] && ! python3 -c "from hermes_cli.main import _has_any_provider_configured; exit(0 if _has_any_provider_configured() else 1)" 2>/dev/null; then
     echo "Hermes Agent is not configured yet. Starting setup wizard..."
-    echo "(To re-run later: hermes setup | To suppress: touch ~/.hermes/.hermes_agent_setup_successful)"
+    echo "(To re-run later: hermes setup)"
     echo ""
-    hermes setup && touch "$HERMES_HOME/.hermes_agent_setup_successful"
+    hermes setup
 fi
 # Source persistent user profile if it exists (agent/user customizations)
 [ -f "$HERMES_HOME/profile.sh" ] && . "$HERMES_HOME/profile.sh"
