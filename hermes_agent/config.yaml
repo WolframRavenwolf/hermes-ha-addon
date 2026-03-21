@@ -1,5 +1,5 @@
 name: Hermes Agent
-version: "0.2.7"
+version: "0.2.8"
 slug: hermes_agent
 description: "NousResearch Hermes Agent - persistent AI agent with memory, skills, and multi-platform messaging"
 url: "https://github.com/NousResearch/hermes-agent"

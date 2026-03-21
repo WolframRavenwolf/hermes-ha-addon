@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/command/with-contenv bash
 # ─────────────────────────────────────────────────────────────────────
 # Hermes Agent HA Add-on Entrypoint
 # ─────────────────────────────────────────────────────────────────────
@@ -292,10 +292,13 @@ sed -i \
 echo "[run] Nginx configured (port: $NGINX_PORT, log level: $NGINX_LOG_LEVEL)"
 
 # ── Section 9: Start services ───────────────────────────────────────
+# Read Supervisor token (s6-overlay stores runtime env in files, not in process env)
+SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN:-$(cat /var/run/s6/container_environment/SUPERVISOR_TOKEN 2>/dev/null || echo '')}"
+
 # Get dynamically assigned ingress port from Supervisor API (retry up to 30s)
 INGRESS_PORT=""
 for i in $(seq 1 30); do
-    INGRESS_PORT=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN:-}" http://supervisor/addons/self/info 2>/dev/null | jq -r '.data.ingress_port' 2>/dev/null) || true
+    INGRESS_PORT=$(curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info 2>/dev/null | jq -r '.data.ingress_port' 2>/dev/null) || true
     if [ -n "$INGRESS_PORT" ] && [ "$INGRESS_PORT" != "null" ] && [ "$INGRESS_PORT" != "0" ]; then
         break
     fi
