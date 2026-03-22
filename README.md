@@ -150,4 +150,4 @@ ssh -tp <port> root@<ha-host> "docker exec -it addon_<slug>_hermes_agent tmux -u
 
 ## License
 
-This addon packaging is provided as-is. Hermes Agent itself is [MIT licensed](https://github.com/NousResearch/hermes-agent/blob/main/LICENSE).
+This addon is [MIT licensed](LICENSE). Hermes Agent itself is also [MIT licensed](https://github.com/NousResearch/hermes-agent/blob/main/LICENSE).
