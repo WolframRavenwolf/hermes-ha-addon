@@ -14,7 +14,7 @@ fi
 opt() { jq -r ".${1} // empty" "$OPTIONS_FILE"; }
 opt_bool() { jq -r ".${1} // false" "$OPTIONS_FILE"; }
 
-HERMES_HOME_REL=$(opt hermes_home)
+HERMES_HOME_DIR=$(opt hermes_home)
 GIT_URL=$(opt git_url)
 GIT_REF=$(opt git_ref)
 GIT_TOKEN=$(opt git_token)
@@ -41,7 +41,7 @@ if [ "$FORCE_IPV4" = "true" ]; then
 fi
 
 # Core paths
-export HERMES_HOME="/config/${HERMES_HOME_REL:-.hermes}"
+export HERMES_HOME="/config/${HERMES_HOME_DIR:-.hermes}"
 export HOME="/root"
 echo "[run] HERMES_HOME: $HERMES_HOME"
 
@@ -270,8 +270,8 @@ fi
 ln -snf "$HERMES_HOME/.tmux.conf" /root/.tmux.conf
 
 # ── Section 7: Environment variable passthrough ──────────────────────
-# Reserved names that cannot be overridden
-RESERVED_VARS="HOME|PATH|LD_LIBRARY_PATH|LD_PRELOAD|PYTHONPATH|PYTHONHOME|UV_TOOL_DIR|UV_CACHE_DIR|HERMES_HOME|VIRTUAL_ENV|SHELL|USER|TERM|LANG|LC_ALL"
+# Only reserve vars controlled by dedicated config options (avoid conflicts)
+RESERVED_VARS="HERMES_HOME|HASS_TOKEN|HASS_URL|TZ"
 
 ENV_COUNT=$(jq '.env_vars | length' "$OPTIONS_FILE" 2>/dev/null || echo 0)
 if [ "$ENV_COUNT" -gt 0 ]; then
@@ -279,7 +279,7 @@ if [ "$ENV_COUNT" -gt 0 ]; then
         VAR_NAME=$(jq -r ".env_vars[$i].name" "$OPTIONS_FILE")
         VAR_VALUE=$(jq -r ".env_vars[$i].value" "$OPTIONS_FILE")
         if echo "$VAR_NAME" | grep -qE "^($RESERVED_VARS)$"; then
-            echo "[run] Warning: Skipping reserved env var '$VAR_NAME'"
+            echo "[run] Warning: Skipping '$VAR_NAME' (use the dedicated config option instead)"
             continue
         fi
         export "$VAR_NAME"="$VAR_VALUE"

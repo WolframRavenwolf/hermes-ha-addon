@@ -1,15 +1,12 @@
 configuration:
-  hermes_home:
-    name: Hermes Home Directory
-    description: >-
-      Directory name for Hermes Agent data (relative to /config).
-      Default ".hermes". Change to e.g. "amy" for /config/amy/.
   git_url:
     name: Git Repository URL
     description: Hermes Agent git repository URL.
   git_ref:
     name: Git Branch / Tag
-    description: Branch, tag, or commit hash to check out.
+    description: >-
+      Branch, tag, or commit hash to check out.
+      Leave empty for the repository's default branch.
   git_token:
     name: Git Token
     description: Personal access token for private repositories (optional).
@@ -17,18 +14,26 @@ configuration:
     name: Auto Update
     description: >-
       Pull latest changes from git on every restart.
-  timezone:
-    name: Timezone
-    description: Container timezone (e.g. "Europe/Berlin", "America/New_York").
-  force_ipv4_dns:
-    name: Force IPv4 DNS
-    description: Prefer IPv4 for DNS resolution (fixes issues on some networks).
-  homeassistant_token:
-    name: Home Assistant Token
-    description: Long-lived access token for HA API integration (optional).
   hass_url:
     name: Home Assistant URL
     description: Home Assistant base URL for API access.
+  homeassistant_token:
+    name: Home Assistant Token
+    description: Long-lived access token for HA API integration (optional).
+  hermes_home:
+    name: Agent Profile Directory
+    description: >-
+      Directory name for agent data (relative to /config).
+      Each profile has its own personality, memories, config, and skills.
+      Change to switch profiles (e.g. "amy"). Old data is kept.
+  force_ipv4_dns:
+    name: Force IPv4 DNS
+    description: Prefer IPv4 for DNS resolution (fixes issues on some networks).
+  timezone:
+    name: Timezone
+    description: >-
+      Override container timezone (e.g. "Europe/Berlin", "America/New_York").
+      Leave empty to use Home Assistant's timezone.
   env_vars:
     name: Environment Variables
     description: >-
