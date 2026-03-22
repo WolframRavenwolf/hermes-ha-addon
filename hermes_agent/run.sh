@@ -162,6 +162,11 @@ if ! shopt -oq posix; then
         . /etc/bash_completion
     fi
 fi
+
+# Command-not-found handler
+if [ -x /usr/lib/command-not-found ]; then
+    command_not_found_handle() { /usr/lib/command-not-found -- "$1"; return $?; }
+fi
 BASHRC
     echo "[run] Created default .bashrc"
 fi
