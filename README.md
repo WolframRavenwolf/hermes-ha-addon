@@ -26,17 +26,17 @@
 
 Addon-level options are configured in the HA UI (Settings > Add-ons > Hermes Agent > Configuration):
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `git_url` | NousResearch repo | Git repository URL (clear to reset to default) |
-| `git_ref` | *(empty)* | Branch, tag, or commit (empty = repo's default branch) |
-| `git_token` | | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI |
-| `auto_update` | `false` | Pull latest changes on restart (stashes local modifications) |
-| `hass_url` | `http://homeassistant.local:8123` | Home Assistant URL for API access |
-| `homeassistant_token` | | Long-lived access token for HA API integration |
-| `hermes_home` | `.hermes` | Agent profile directory (relative to ~). Change to switch profiles (e.g. "amy") |
-| `prefer_ipv4_dns` | `true` | Prioritize IPv4 over IPv6 for DNS resolution |
-| `env_vars` | `[]` | Additional environment variables (API keys, etc.) |
+| Option                | Default                           | Description                                                                     |
+| --------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
+| `git_url`             | NousResearch repo                 | Git repository URL (clear to reset to default)                                  |
+| `git_ref`             | *(empty)*                         | Branch, tag, or commit (empty = repo's default branch)                          |
+| `git_token`           |                                   | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI                 |
+| `auto_update`         | `false`                           | Pull latest changes on restart (stashes local modifications)                    |
+| `hass_url`            | `http://homeassistant.local:8123` | Home Assistant URL for API access                                               |
+| `homeassistant_token` |                                   | Long-lived access token for HA API integration                                  |
+| `hermes_home`         | `.hermes`                         | Agent profile directory (relative to ~). Change to switch profiles (e.g. "amy") |
+| `prefer_ipv4_dns`     | `true`                            | Prioritize IPv4 over IPv6 for DNS resolution                                    |
+| `env_vars`            | `[]`                              | Additional environment variables (API keys, etc.)                               |
 
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
 
@@ -51,19 +51,19 @@ hermes gateway setup  # Configure messaging platforms
 
 The addon provides multiple access paths:
 
-| Path | Description |
-|------|-------------|
-| **HA Sidebar** | Landing page with embedded terminal, mode switching, status |
-| `/hermes/` | Hermes Agent (login shell -- starts hermes, crash drops to shell) |
-| `/terminal/` | Shell terminal (non-login -- shell only, no hermes) |
-| `/v1/chat/completions` | OpenAI-compatible API endpoint |
-| `/cert/ca.crt` | CA certificate download (for trusting self-signed HTTPS) |
+| Path                   | Description                                                              |
+| ---------------------- | ------------------------------------------------------------------------ |
+| **HA Sidebar**         | Landing page with embedded terminal, mode switching, status              |
+| `/hermes/`             | Hermes Agent (login shell -- starts hermes, crash drops to shell)        |
+| `/terminal/`           | Shell terminal (non-login shell -- plain shell, hermes not auto-started) |
+| `/v1/chat/completions` | OpenAI-compatible API endpoint                                           |
+| `/cert/ca.crt`         | CA certificate download (for trusting self-signed HTTPS)                 |
 
 **Ports:**
 
-| Port | Description |
-|------|-------------|
-| **8080** | HTTP access (all paths above) |
+| Port     | Description                                          |
+| -------- | ---------------------------------------------------- |
+| **8080** | HTTP access (all paths above)                        |
 | **8443** | HTTPS access (same paths, TLS with self-signed cert) |
 
 Both ports are configurable in the HA addon network settings.
@@ -80,13 +80,13 @@ Three services in a Debian Bookworm container:
 
 Login shells start Hermes automatically. Non-login shells provide a plain shell with all paths configured.
 
-| File | Persistent? | Purpose |
-|------|-------------|---------|
-| `~/.hermes_profile` | Regenerated | Env vars, PATH, tokens (from addon config) |
-| `~/.bashrc` | Yes | Sources .hermes_profile + .env, prompt, aliases |
-| `~/.profile` | Yes | Sources .bashrc, starts hermes (login shells) |
-| `~/.bash_aliases` | Yes (user) | Custom aliases and functions |
-| `~/.tmux.conf` | Yes | Terminal config (mouse scroll, history) |
+| File                | Persistent? | Purpose                                         |
+| ------------------- | ----------- | ----------------------------------------------- |
+| `~/.hermes_profile` | Regenerated | Env vars, PATH, tokens (from addon config)      |
+| `~/.bashrc`         | Yes         | Sources .hermes_profile + .env, prompt, aliases |
+| `~/.profile`        | Yes         | Sources .bashrc, starts hermes (login shells)   |
+| `~/.bash_aliases`   | Yes (user)  | Custom aliases and functions                    |
+| `~/.tmux.conf`      | Yes         | Terminal config (mouse scroll, history)         |
 
 ### Persistent Storage
 
@@ -94,44 +94,40 @@ Login shells start Hermes automatically. Non-login shells provide a plain shell 
 
 ```
 ~ (/config/)
-├── hermes-agent/          # Git clone (source code)
-│   └── venv → ~/.venv/    # Symlink to shared venv
-├── .hermes/               # Agent profile (HERMES_HOME)
-│   ├── hermes-agent → ~/hermes-agent/  # Symlink to shared source
-│   ├── config.yaml        # Hermes config (model, platforms, tools)
+├── .certs/                # TLS certificates (auto-generated or custom)
+├── .go/                   # Go workspace
+├── .hermes/               # HERMES_HOME (matches official installer layout)
+│   ├── hermes-agent/      # Git clone (source code, agent-modifiable)
+│   │   └── venv/          # Python venv (editable install)
+│   ├── logs/              # Gateway logs
+│   ├── memories/          # Long-term memory (MEMORY.md, USER.md)
+│   ├── sessions/          # Conversation state
+│   ├── skills/            # Auto-created + installed skills
 │   ├── .env               # API keys (chmod 600)
 │   ├── SOUL.md            # Agent personality
-│   ├── memories/          # Long-term memory (MEMORY.md, USER.md)
-│   ├── skills/            # Auto-created + installed skills
-│   ├── plugins/           # Custom tools and hooks
-│   ├── sessions/          # Conversation state
-│   ├── state.db           # SQLite FTS5 state
-│   └── logs/              # Gateway logs
-├── .venv/                 # Python venv (shared across profiles)
+│   ├── config.yaml        # Hermes config (model, platforms, tools)
+│   └── state.db           # SQLite FTS5 state
 ├── .linuxbrew/            # Homebrew
 ├── .npm-global/           # npm global packages
-├── .go/                   # Go workspace
-├── certs/                 # TLS certificates (auto-generated or custom)
-├── .hermes_profile        # Env vars + PATH (regenerated)
+├── .bash_aliases          # Custom aliases and functions (optional, user-created)
+├── .bashrc                # Shell config
 ├── .hermes_install        # Install marker
-├── .bashrc                # Shell config (persistent)
-├── .profile               # Login shell config (persistent)
-└── .tmux.conf             # tmux config (persistent)
+├── .hermes_profile        # Env vars + PATH (regenerated)
+├── .profile               # Login shell config (starts hermes)
+└── .tmux.conf             # tmux config
 ```
-
-Source and venv are shared across profiles. Switching `hermes_home` (e.g. `.hermes` to `amy`) creates a new profile with its own config, memories, and personality -- the same Hermes installation.
 
 ### Container Toolchain
 
 Pre-installed at build time:
 
-- **Languages**: Python 3.11+ (uv), Node.js 22, Go 1.22
-- **Browser**: Chromium + agent-browser (headless automation)
-- **Media**: ffmpeg (TTS audio conversion)
-- **Dev tools**: git, gh (GitHub CLI), ripgrep, fd-find, bat, jq, tree, vim, nano
-- **Networking**: curl, wget, openssh-client, dnsutils, netcat
-- **System**: tmux, nginx, sqlite3, rsync, zip/unzip, procps
-- **Package managers**: Homebrew (Linuxbrew), npm, uv, go install
+- **Languages**: Go 1.22, Node.js 22, Python 3.11
+- **Browser**: Chromium, agent-browser
+- **Dev tools**: bat, fd-find, gh (GitHub CLI), git, jq, nano, ripgrep, tree, vim
+- **Media**: ffmpeg
+- **Networking**: curl, dnsutils, netcat, openssh-client, wget
+- **Package managers**: go, Homebrew (Linuxbrew), npm, uv
+- **System**: bash-completion, command-not-found, rsync, sqlite3, tmux, unzip/zip
 
 ## SSH Access
 

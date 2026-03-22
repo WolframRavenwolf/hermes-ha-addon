@@ -45,12 +45,12 @@ export HERMES_HOME="$HOME/${HERMES_HOME_DIR:-.hermes}"
 echo "[run] HERMES_HOME: $HERMES_HOME"
 
 # ── Section 3: Persistent storage setup ──────────────────────────────
-SRC_DIR="$HOME/hermes-agent"
-VENV_DIR="$HOME/.venv"
+SRC_DIR="$HERMES_HOME/hermes-agent"
+VENV_DIR="$SRC_DIR/venv"
 BREW_DIR="$HOME/.linuxbrew"
 NODE_DIR="$HOME/.npm-global"
 GO_DIR="$HOME/.go"
-CERTS_DIR="$HOME/certs"
+CERTS_DIR="$HOME/.certs"
 INGRESS_PORT=49169
 TTYD_HERMES_PORT=49269
 TTYD_TERMINAL_PORT=49369
@@ -254,10 +254,6 @@ if install_needed; then
 else
     echo "[run] Install up to date (marker match)"
 fi
-
-# Symlinks: official installer expects source + venv inside HERMES_HOME
-ln -snf "$SRC_DIR" "$HERMES_HOME/hermes-agent"
-ln -snf "$VENV_DIR" "$SRC_DIR/venv"
 
 # Link image-installed npm packages into project node_modules (where Hermes expects them)
 if [ ! -e "$SRC_DIR/node_modules/agent-browser" ]; then

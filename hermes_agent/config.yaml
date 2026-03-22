@@ -1,8 +1,8 @@
 name: Hermes Agent
-version: "0.7.6"
+version: "0.8.0"
 slug: hermes_agent
-description: "NousResearch Hermes Agent - persistent AI agent with memory, skills, and multi-platform messaging"
-url: "https://github.com/NousResearch/hermes-agent"
+description: "Hermes Agent - The self-improving AI agent built by Nous Research. Home Assistant Add-on by Wolfram Ravenwolf."
+url: "https://github.com/WolframRavenwolf/hermes-ha-addon"
 arch:
   - amd64
   - aarch64
@@ -11,7 +11,7 @@ startup: application
 boot: auto
 ingress: true
 ingress_port: 49169
-panel_icon: mdi:robot-outline
+panel_icon: mdi:robot
 panel_title: Hermes Agent
 map:
   - addon_config:rw
