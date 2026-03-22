@@ -14,14 +14,14 @@ fi
 opt() { jq -r ".${1} // empty" "$OPTIONS_FILE"; }
 opt_bool() { jq -r ".${1} // false" "$OPTIONS_FILE"; }
 
-HERMES_HOME_DIR=$(opt hermes_home)
 GIT_URL=$(opt git_url)
 GIT_REF=$(opt git_ref)
 GIT_TOKEN=$(opt git_token)
 AUTO_UPDATE=$(opt_bool auto_update)
-FORCE_IPV4=$(opt_bool force_ipv4_dns)
-HASS_TOKEN=$(opt homeassistant_token)
 HASS_URL=$(opt hass_url)
+HASS_TOKEN=$(opt homeassistant_token)
+HERMES_HOME_DIR=$(opt hermes_home)
+PREFER_IPV4=$(opt_bool prefer_ipv4_dns)
 
 # ── Section 2: System setup ─────────────────────────────────────────
 # Timezone: sync /etc/localtime + /etc/timezone from HA's TZ env var
@@ -32,7 +32,7 @@ if [ -n "$TZ" ] && [[ "$TZ" != *..* ]] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
 fi
 
 # IPv4 DNS priority
-if [ "$FORCE_IPV4" = "true" ]; then
+if [ "$PREFER_IPV4" = "true" ]; then
     if ! grep -q "precedence ::ffff:0:0/96  100" /etc/gai.conf 2>/dev/null; then
         echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
     fi
@@ -40,34 +40,38 @@ if [ "$FORCE_IPV4" = "true" ]; then
 fi
 
 # Core paths
-export HERMES_HOME="/config/${HERMES_HOME_DIR:-.hermes}"
-export HOME="/root"
+export HOME="/config"
+export HERMES_HOME="$HOME/${HERMES_HOME_DIR:-.hermes}"
 echo "[run] HERMES_HOME: $HERMES_HOME"
 
 # ── Section 3: Persistent storage setup ──────────────────────────────
-SRC_DIR="/config/hermes-agent"
-VENV_DIR="$HERMES_HOME/venv"
+SRC_DIR="$HOME/hermes-agent"
+VENV_DIR="$HOME/.venv"
 WORKSPACE_DIR="$HERMES_HOME/workspace"
-BREW_PERSIST="/config/.linuxbrew"
-NODE_GLOBAL="/config/.node_global"
-GO_DIR="/config/.go"
-CERTS_DIR="/config/certs"
-TTYD_TERMINAL_PORT=7681
-TTYD_HERMES_PORT=7682
-INGRESS_PORT=48099
+BREW_DIR="$HOME/.linuxbrew"
+NODE_DIR="$HOME/.npm-global"
+GO_DIR="$HOME/.go"
+CERTS_DIR="$HOME/certs"
+INGRESS_PORT=49169
+TTYD_HERMES_PORT=49269
+TTYD_TERMINAL_PORT=49369
 HTTP_PORT=8080
 HTTPS_PORT=8443
 
 # Create persistent directories
-for d in "$HERMES_HOME" "$HERMES_HOME/memories" "$HERMES_HOME/skills" \
-         "$HERMES_HOME/plugins" "$HERMES_HOME/sessions" "$HERMES_HOME/cron" \
-         "$HERMES_HOME/logs" "$WORKSPACE_DIR" \
-         "$NODE_GLOBAL/lib" "$GO_DIR/bin" "$CERTS_DIR"; do
+for d in "$HERMES_HOME" \
+         "$HERMES_HOME/cron" \
+         "$HERMES_HOME/logs" \
+         "$HERMES_HOME/memories" \
+         "$HERMES_HOME/plugins" \
+         "$HERMES_HOME/sessions" \
+         "$HERMES_HOME/skills" \
+         "$WORKSPACE_DIR" \
+         "$NODE_DIR/lib" \
+         "$GO_DIR/bin" \
+         "$CERTS_DIR"; do
     mkdir -p "$d"
 done
-
-# Symlink ~/.hermes -> HERMES_HOME
-ln -snf "$HERMES_HOME" "$HOME/.hermes"
 
 # Go
 export GOPATH="$GO_DIR"
@@ -75,43 +79,62 @@ export GOBIN="$GO_DIR/bin"
 export PATH="$GOBIN:$PATH"
 
 # Node global
-export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
-export PATH="$NODE_GLOBAL/bin:$PATH"
+export NPM_CONFIG_PREFIX="$NODE_DIR"
+export PATH="$NODE_DIR/bin:$PATH"
 
 # Homebrew: sync from image on first boot, then persistent
-BREW_IMAGE="${HOMEBREW_IMAGE_PREFIX:-/home/linuxbrew/.linuxbrew}"
-if [ -d "$BREW_IMAGE" ] && [ ! -d "$BREW_PERSIST/bin" ]; then
+BREW_IMAGE="/home/linuxbrew/.linuxbrew"
+if [ -d "$BREW_IMAGE" ] && [ ! -d "$BREW_DIR/bin" ]; then
     echo "[run] First boot: syncing Homebrew to persistent storage..."
-    rsync -a "$BREW_IMAGE/" "$BREW_PERSIST/"
+    rsync -a "$BREW_IMAGE/" "$BREW_DIR/"
     echo "[run] Homebrew synced"
 fi
-if [ -d "$BREW_PERSIST/bin" ]; then
-    export HOMEBREW_PREFIX="$BREW_PERSIST"
-    export HOMEBREW_CELLAR="$BREW_PERSIST/Cellar"
-    export HOMEBREW_REPOSITORY="$BREW_PERSIST/Homebrew"
-    export PATH="$BREW_PERSIST/bin:$BREW_PERSIST/sbin:$PATH"
+if [ -d "$BREW_DIR/bin" ]; then
+    export HOMEBREW_PREFIX="$BREW_DIR"
+    export HOMEBREW_CELLAR="$BREW_DIR/Cellar"
+    export HOMEBREW_REPOSITORY="$BREW_DIR/Homebrew"
+    export PATH="$BREW_DIR/sbin:$BREW_DIR/bin:$PATH"
 fi
 
 # ── Section 4: Shell environment ─────────────────────────────────────
-# .bashrc: paths + variables for ALL shells (login and non-login)
-cat > /root/.bashrc << BASHRC
+# ~/.hermes_profile: env vars + PATH (regenerated every start, dynamic from config)
+cat > /config/.hermes_profile << ENVSH
 export HERMES_HOME="$HERMES_HOME"
 export GOPATH="$GO_DIR"
 export GOBIN="$GO_DIR/bin"
-export NPM_CONFIG_PREFIX="$NODE_GLOBAL"
-export PATH="$VENV_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_GLOBAL/bin:$BREW_PERSIST/bin:$BREW_PERSIST/sbin:\$PATH"
-export PS1='\[\033[01;34m\]\w\[\033[00m\]\\\$ '
-cd "$HERMES_HOME"
-# Source persistent user customizations if they exist
-[ -f "$HERMES_HOME/profile.sh" ] && . "$HERMES_HOME/profile.sh"
-[ -f "$HERMES_HOME/.bash_aliases" ] && . "$HERMES_HOME/.bash_aliases"
-BASHRC
+export NPM_CONFIG_PREFIX="$NODE_DIR"
+export PATH="$VENV_DIR/bin:$BREW_DIR/sbin:$BREW_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_DIR/bin:\$PATH"
+$([ -n "$HASS_TOKEN" ] && echo "export HASS_TOKEN=\"$HASS_TOKEN\"")
+$([ -n "$HASS_URL" ] && echo "export HASS_URL=\"$HASS_URL\"")
+$([ -n "$GIT_TOKEN" ] && echo "export GITHUB_TOKEN=\"$GIT_TOKEN\"")
+export API_SERVER_ENABLED=true
+export API_SERVER_PORT=8642
+export API_SERVER_HOST=127.0.0.1
+ENVSH
 
-# profile.d: hermes autostart for LOGIN shells only
-cat > /etc/profile.d/hermes.sh << 'PROFILE'
-# Source .bashrc for paths (login shells don't source it by default in some setups)
-[ -f /root/.bashrc ] && . /root/.bashrc
-# Start hermes — clean exit ends session, crash drops to shell
+# ~/.bashrc: persistent, create-if-missing (user-editable)
+if [ ! -f /config/.bashrc ]; then
+    cat > /config/.bashrc << 'BASHRC'
+# Source Hermes environment (paths, variables, tokens)
+[ -f ~/.hermes_profile ] && . ~/.hermes_profile
+# Source Hermes API keys
+[ -f "${HERMES_HOME:=$HOME/.hermes}/.env" ] && set -a && . "$HERMES_HOME/.env" && set +a
+# Prompt
+PS1='\[\033[01;34m\]\w\[\033[00m\]\$ '
+# Working directory
+cd "${HERMES_HOME:-$HOME}" 2>/dev/null || cd ~
+# User customizations
+[ -f ~/.bash_aliases ] && . ~/.bash_aliases
+BASHRC
+    echo "[run] Created default .bashrc"
+fi
+
+# ~/.profile: persistent, create-if-missing (user-editable)
+if [ ! -f /config/.profile ]; then
+    cat > /config/.profile << 'PROFILE'
+# Source .bashrc for paths and aliases
+[ -f ~/.bashrc ] && . ~/.bashrc
+# Start Hermes Agent — clean exit ends session, crash drops to shell
 hermes
 _exit=$?
 if [ $_exit -eq 0 ]; then
@@ -121,9 +144,11 @@ echo ""
 echo "Hermes exited with code $_exit. Shell is available for debugging."
 echo "Run 'hermes' to restart, or 'exit' to close this session."
 PROFILE
+    echo "[run] Created default .profile"
+fi
 
 # ── Section 5: Hermes installation ───────────────────────────────────
-MARKER_FILE="$HERMES_HOME/.install_marker"
+MARKER_FILE="$HOME/.hermes_install"
 
 compute_marker() {
     echo "git|${GIT_URL}|${GIT_REF}|$(cd "$SRC_DIR" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo none)"
@@ -165,11 +190,13 @@ if [ ! -d "$SRC_DIR/.git" ]; then
     echo "[run] Clone complete: $(git log --oneline -1)"
 fi
 
-# Auto-update
+# Auto-update (stash local changes, pull, restore)
 if [ "$AUTO_UPDATE" = "true" ] && [ -d "$SRC_DIR/.git" ]; then
     echo "[run] Pulling latest changes..."
     cd "$SRC_DIR"
-    git pull --ff-only 2>/dev/null || echo "[run] Warning: git pull failed (may have local changes)"
+    git stash --quiet 2>/dev/null || true
+    git pull --ff-only 2>/dev/null || echo "[run] Warning: git pull failed (branch may have diverged)"
+    git stash pop --quiet 2>/dev/null || true
     git submodule update --init --recursive 2>/dev/null || true
 fi
 
@@ -202,73 +229,23 @@ export HERMES_VERSION
 echo "[run] Hermes version: $HERMES_VERSION"
 
 # ── Section 6: Initial config scaffolding ────────────────────────────
-# Only create files if they don't exist -- NEVER overwrite user config
-if [ ! -f "$HERMES_HOME/config.yaml" ]; then
-    cat > "$HERMES_HOME/config.yaml" << 'YAML'
-# Hermes Agent configuration
-# Run `hermes setup` or `hermes config edit` to configure interactively.
-#
-# Minimal example:
-# model:
-#   provider: anthropic
-#   model: claude-sonnet-4-20250514
-#
-# See: https://github.com/NousResearch/hermes-agent#configuration
-YAML
-    echo "[run] Created default config.yaml"
-fi
-
-if [ ! -f "$HERMES_HOME/.env" ]; then
-    cat > "$HERMES_HOME/.env" << 'ENV'
-# API keys for Hermes Agent
-# Add your keys here or use `hermes setup` to configure.
-# ANTHROPIC_API_KEY=sk-ant-...
-# OPENAI_API_KEY=sk-...
-# OPENROUTER_API_KEY=sk-or-...
-ENV
+# Hermes creates its own defaults (config.yaml, SOUL.md, etc.) on first run.
+# We only seed .env from the source example if missing.
+if [ ! -f "$HERMES_HOME/.env" ] && [ -f "$SRC_DIR/.env.example" ]; then
+    cp -p "$SRC_DIR/.env.example" "$HERMES_HOME/.env"
     chmod 600 "$HERMES_HOME/.env"
-    echo "[run] Created default .env (chmod 600)"
-fi
-
-if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
-    cat > "$HERMES_HOME/SOUL.md" << 'SOUL'
-# SOUL.md - Agent Personality
-
-You are a helpful AI assistant running on Home Assistant via Hermes Agent.
-
-Customize this file to define your agent's personality, instructions, and behavior.
-SOUL
-    echo "[run] Created default SOUL.md"
-fi
-
-if [ ! -f "$HERMES_HOME/memories/MEMORY.md" ]; then
-    cat > "$HERMES_HOME/memories/MEMORY.md" << 'MEM'
-# MEMORY.md - Agent Long-Term Memory
-
-*This file is managed by the agent. It stores important information across sessions.*
-MEM
-    echo "[run] Created default MEMORY.md"
-fi
-
-if [ ! -f "$HERMES_HOME/memories/USER.md" ]; then
-    cat > "$HERMES_HOME/memories/USER.md" << 'USR'
-# USER.md - About the User
-
-*Add information about yourself here so the agent can better assist you.*
-USR
-    echo "[run] Created default USER.md"
+    echo "[run] Created .env from source example (chmod 600)"
 fi
 
 # tmux config (persistent, user-editable)
-if [ ! -f "$HERMES_HOME/.tmux.conf" ]; then
-    cat > "$HERMES_HOME/.tmux.conf" << 'TMUX'
+if [ ! -f /config/.tmux.conf ]; then
+    cat > /config/.tmux.conf << 'TMUX'
 set -g mouse on
 set -g history-limit 50000
 set -g default-terminal "tmux-256color"
 TMUX
     echo "[run] Created default .tmux.conf"
 fi
-ln -snf "$HERMES_HOME/.tmux.conf" /root/.tmux.conf
 
 # ── Section 7: Environment variable passthrough ──────────────────────
 # Only reserve vars controlled by dedicated config options (avoid conflicts)

@@ -72,7 +72,6 @@ RUN useradd -r -m -s /bin/bash -d /home/linuxbrew linuxbrew \
 RUN su - linuxbrew -c \
     'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' \
     && /home/linuxbrew/.linuxbrew/bin/brew --version
-ENV HOMEBREW_IMAGE_PREFIX="/home/linuxbrew/.linuxbrew"
 
 # ── Addon files ──────────────────────────────────────────────────────
 COPY run.sh /

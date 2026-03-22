@@ -1,5 +1,5 @@
 name: Hermes Agent
-version: "0.5.9"
+version: "0.6.0"
 slug: hermes_agent
 description: "NousResearch Hermes Agent - persistent AI agent with memory, skills, and multi-platform messaging"
 url: "https://github.com/NousResearch/hermes-agent"
@@ -10,7 +10,7 @@ init: false
 startup: application
 boot: auto
 ingress: true
-ingress_port: 48099
+ingress_port: 49169
 panel_icon: mdi:robot-outline
 panel_title: Hermes Agent
 map:
@@ -31,7 +31,7 @@ options:
   hass_url: "http://homeassistant.local:8123"
   homeassistant_token: ""
   hermes_home: ".hermes"
-  force_ipv4_dns: true
+  prefer_ipv4_dns: true
   env_vars: []
 schema:
   git_url: "url?"
@@ -41,7 +41,7 @@ schema:
   hass_url: "url?"
   homeassistant_token: "password?"
   hermes_home: "str?"
-  force_ipv4_dns: "bool"
+  prefer_ipv4_dns: "bool"
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"
       value: "str"
