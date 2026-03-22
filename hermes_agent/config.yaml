@@ -1,5 +1,5 @@
 name: Hermes Agent
-version: "0.5.6"
+version: "0.5.7"
 slug: hermes_agent
 description: "NousResearch Hermes Agent - persistent AI agent with memory, skills, and multi-platform messaging"
 url: "https://github.com/NousResearch/hermes-agent"
@@ -20,8 +20,8 @@ ports:
   8080/tcp: 8080
   8443/tcp: 8443
 ports_description:
-  8080/tcp: "HTTP access (terminal + API)"
-  8443/tcp: "HTTPS access (terminal + API)"
+  8080/tcp: "HTTP: /hermes/ (agent) · /terminal/ (shell) · /v1/ (OpenAI API)"
+  8443/tcp: "HTTPS: same paths as HTTP, with TLS (self-signed cert)"
 options:
   git_url: "https://github.com/NousResearch/hermes-agent.git"
   git_ref: ""
@@ -39,7 +39,7 @@ schema:
   auto_update: "bool"
   hass_url: "url?"
   homeassistant_token: "password?"
-  hermes_home: "str"
+  hermes_home: "str?"
   force_ipv4_dns: "bool"
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"
