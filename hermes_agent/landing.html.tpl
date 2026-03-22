@@ -16,7 +16,7 @@
   .btn.secondary{background:#334155}
   .btn.green{background:#059669}
   .btn:hover{filter:brightness(1.15)}
-  .btn.active{outline:2px solid #60a5fa;outline-offset:1px}
+  .btn.active{background:#ca8a04}
   .term{flex:1;overflow:hidden;position:relative}
   .term iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;background:black}
   .term iframe.hidden{display:none}
