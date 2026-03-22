@@ -427,7 +427,7 @@ start_ttyd() {
         --port "${TTYD_HERMES_PORT}" \
         --interface 127.0.0.1 \
         --base-path /hermes/ \
-        --writable \
+        --writable -d 2 \
         tmux -u new -A -s hermes /usr/bin/bash -l &
     TTYD_HERMES_PID=$!
     # Terminal: non-login shell (plain shell)
@@ -435,7 +435,7 @@ start_ttyd() {
         --port "${TTYD_TERMINAL_PORT}" \
         --interface 127.0.0.1 \
         --base-path /terminal/ \
-        --writable \
+        --writable -d 2 \
         tmux -u new -A -s terminal /usr/bin/bash &
     TTYD_TERMINAL_PID=$!
     echo "[run] ttyd started (hermes PID: $TTYD_HERMES_PID, terminal PID: $TTYD_TERMINAL_PID)"
