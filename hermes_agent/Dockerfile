@@ -12,16 +12,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # Chromium (deps auto-resolved by apt)
         chromium \
         # SQLite with FTS5
-        #sqlite3 libsqlite3-dev \
+        libsqlite3-dev \
         # Homebrew deps
         file \
         # Python build deps
-        #python3 python3-pip python3-venv libssl-dev \
+        python3-pip python3-venv \
         # Networking / dev tools
-        #bash-completion bat command-not-found dnsutils fd-find less nano \
-        #netcat-openbsd openssh-client procps tree unzip vim wget zip \
-    && rm -rf /var/lib/apt/lists/* #\
-    #&& ln -s /usr/bin/batcat /usr/local/bin/bat
+        bash-completion bat command-not-found dnsutils fd-find less nano \
+        netcat-openbsd openssh-client tree unzip vim wget zip \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/batcat /usr/local/bin/bat
 
 ENV LANG=C.UTF-8 \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
