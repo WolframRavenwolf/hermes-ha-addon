@@ -380,10 +380,22 @@ export API_SERVER_PORT=8642
 export API_SERVER_HOST=127.0.0.1
 if [ -n "$ACCESS_PASSWORD" ]; then
     export API_SERVER_KEY="$ACCESS_PASSWORD"
+    # Write to .env so Hermes' dotenv loader picks it up (override=True)
+    if [ -f "$HERMES_HOME/.env" ]; then
+        if grep -q "^API_SERVER_KEY=" "$HERMES_HOME/.env"; then
+            sed -i "s|^API_SERVER_KEY=.*|API_SERVER_KEY=${ACCESS_PASSWORD}|" "$HERMES_HOME/.env"
+        else
+            echo "API_SERVER_KEY=${ACCESS_PASSWORD}" >> "$HERMES_HOME/.env"
+        fi
+    fi
     echo "hermes:$(openssl passwd -apr1 "$ACCESS_PASSWORD")" > /etc/nginx/.htpasswd
     echo "[run] Access password set (API key + nginx basic auth)"
 else
     rm -f /etc/nginx/.htpasswd
+    # Clear API_SERVER_KEY in .env if password was removed
+    if [ -f "$HERMES_HOME/.env" ] && grep -q "^API_SERVER_KEY=" "$HERMES_HOME/.env"; then
+        sed -i "s|^API_SERVER_KEY=.*|API_SERVER_KEY=|" "$HERMES_HOME/.env"
+    fi
 fi
 
 # ~/.hermes_profile: regenerated every start with all env vars (for SSH/docker-exec sessions)
