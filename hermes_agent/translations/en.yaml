@@ -25,17 +25,17 @@ configuration:
   enable_ports:
     name: Enable HTTP/HTTPS Ports
     description: >-
-      Enable direct HTTP/HTTPS access (web terminal + API server).
+      ⚠️ Enable direct HTTP/HTTPS access (web terminal + API server).
       Set an access password to secure these ports.
   enable_api:
     name: Enable API Server
     description: >-
-      Enable the OpenAI-compatible API server (requires direct HTTP/HTTPS access).
+      ⚠️ Enable the OpenAI-compatible API server (requires direct HTTP/HTTPS access).
       The access password doubles as the server API key.
   access_password:
     name: Access Password
     description: >-
-      Password for HTTP/HTTPS access (web terminal).
+      ⚠️ Password for HTTP/HTTPS access (web terminal).
       Also used as the server API key.
   env_vars:
     name: Hermes .env Variables
