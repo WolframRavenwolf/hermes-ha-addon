@@ -176,9 +176,10 @@ if [ ! -f /config/.profile ]; then
     cat > /config/.profile << 'PROFILE'
 # Source .bashrc for paths and aliases
 [ -f ~/.bashrc ] && . ~/.bashrc
-# Start Hermes Agent only in the "hermes" tmux session (web terminal via ttyd)
-# Other sessions (terminal, Hermes' own tool, SSH) get a plain shell
-if [ "$(tmux display-message -p '#S' 2>/dev/null)" = "hermes" ]; then
+# Start Hermes Agent only in the "hermes" tmux session, and only once
+# HERMES_RUNNING prevents recursion when Hermes spawns subshells
+if [ "$(tmux display-message -p '#S' 2>/dev/null)" = "hermes" ] && [ -z "$HERMES_RUNNING" ]; then
+    export HERMES_RUNNING=1
     hermes
     _exit=$?
     if [ $_exit -eq 0 ]; then
