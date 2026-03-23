@@ -97,6 +97,8 @@ http {
         listen %%HTTP_PORT%%;
         server_name _;
 
+        %%AUTH_BASIC_ON%%
+
         location = / {
             root /var/www;
             try_files /landing.html =404;
@@ -129,6 +131,7 @@ http {
         }
 
         location /v1/ {
+            %%AUTH_BASIC_OFF%%
             proxy_pass http://hermes_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -145,6 +148,7 @@ http {
         }
 
         location = /health {
+            %%AUTH_BASIC_OFF%%
             access_log off;
             return 200 "OK\n";
             add_header Content-Type text/plain;
@@ -161,6 +165,8 @@ http {
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers HIGH:!aNULL:!MD5;
 
+        %%AUTH_BASIC_ON%%
+
         location = / {
             root /var/www;
             try_files /landing.html =404;
@@ -195,6 +201,7 @@ http {
         }
 
         location /v1/ {
+            %%AUTH_BASIC_OFF%%
             proxy_pass http://hermes_api;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -212,6 +219,7 @@ http {
         }
 
         location = /health {
+            %%AUTH_BASIC_OFF%%
             access_log off;
             return 200 "OK\n";
             add_header Content-Type text/plain;

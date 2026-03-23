@@ -21,6 +21,7 @@ AUTO_UPDATE=$(opt_bool auto_update)
 HASS_URL=$(opt hass_url)
 HASS_TOKEN=$(opt homeassistant_token)
 HERMES_HOME_DIR=$(opt hermes_home)
+ACCESS_PASSWORD=$(opt access_password)
 PREFER_IPV4=$(opt_bool prefer_ipv4_dns)
 
 # ── Section 2: System setup ─────────────────────────────────────────
@@ -377,6 +378,13 @@ fi
 export API_SERVER_ENABLED=true
 export API_SERVER_PORT=8642
 export API_SERVER_HOST=127.0.0.1
+if [ -n "$ACCESS_PASSWORD" ]; then
+    export API_SERVER_KEY="$ACCESS_PASSWORD"
+    echo "hermes:$(openssl passwd -apr1 "$ACCESS_PASSWORD")" > /etc/nginx/.htpasswd
+    echo "[run] Access password set (API key + nginx basic auth)"
+else
+    rm -f /etc/nginx/.htpasswd
+fi
 
 # ~/.hermes_profile: regenerated every start with all env vars (for SSH/docker-exec sessions)
 cat > /config/.hermes_profile << ENVSH
@@ -423,6 +431,14 @@ else
 fi
 
 # ── Section 9: Render nginx config ───────────────────────────────────
+if [ -n "$ACCESS_PASSWORD" ]; then
+    AUTH_BASIC_ON='auth_basic "Hermes Agent"; auth_basic_user_file /etc/nginx/.htpasswd;'
+    AUTH_BASIC_OFF='auth_basic off;'
+else
+    AUTH_BASIC_ON='# no authentication'
+    AUTH_BASIC_OFF=''
+fi
+
 cp /etc/nginx/nginx.conf.tpl /etc/nginx/nginx.conf
 sed -i \
     -e "s|%%INGRESS_PORT%%|${INGRESS_PORT}|g" \
@@ -432,6 +448,8 @@ sed -i \
     -e "s|%%TTYD_HERMES_PORT%%|${TTYD_HERMES_PORT}|g" \
     -e "s|%%CERTS_DIR%%|${CERTS_DIR}|g" \
     -e "s|%%HERMES_VERSION%%|${HERMES_VERSION}|g" \
+    -e "s|%%AUTH_BASIC_ON%%|${AUTH_BASIC_ON}|g" \
+    -e "s|%%AUTH_BASIC_OFF%%|${AUTH_BASIC_OFF}|g" \
     /etc/nginx/nginx.conf
 
 # Render landing page

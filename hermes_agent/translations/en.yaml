@@ -27,6 +27,12 @@ configuration:
     description: >-
       Directory name for Hermes Agent data (relative to /config).
       Default ".hermes". Change to e.g. "amy" for /config/amy/.
+  access_password:
+    name: Access Password
+    description: >-
+      Password for HTTP/HTTPS access (terminal + API).
+      Leave empty for no authentication (LAN-only use).
+      Also used as API key (Authorization: Bearer <password>).
   prefer_ipv4_dns:
     name: Prefer IPv4 DNS
     description: Prioritize IPv4 over IPv6 for DNS resolution (fixes timeouts on some networks).
