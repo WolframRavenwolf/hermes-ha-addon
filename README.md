@@ -14,33 +14,33 @@
 - **Self-modifiable source** -- editable install lets the agent read and modify its own code
 - **Persistent web terminal** -- full CLI access via tmux-backed ttyd through the Home Assistant sidebar
 - **HTTP + HTTPS** -- direct LAN access with auto-generated TLS certificates
-- **Full persistence** -- source code, venv, Homebrew, npm, Go, and all agent data survive addon updates
+- **Full persistence** -- source code, venv, Homebrew, npm, Go, and all agent data survive add-on updates
 
 ## Installation
 
 1. Add this repository to Home Assistant: **Settings > Apps > Install app > ⋮ > Repositories**
 2. Paste the repository URL and click **Add**
 3. Find **Hermes Agent** in the store and click **Install**
-4. Start the addon and open **Hermes Agent** from the sidebar
+4. Start the add-on and open **Hermes Agent** from the sidebar
 5. The setup wizard runs automatically -- configure your model and API keys
 
 ## Configuration
 
-Addon-level options are configured in the Home Assistant UI (Settings > Apps > Hermes Agent > Configuration):
+Add-on-level options are configured in the Home Assistant UI (Settings > Apps > Hermes Agent > Configuration):
 
-| Option                | Default                                            | Description                                                                         |
-| --------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `git_url`             | `https://github.com/NousResearch/hermes-agent.git` | Git repository URL (clear to reset to default)                                      |
-| `git_ref`             |                                                    | Branch, tag, or commit (empty = repo's default branch)                              |
-| `git_token`           |                                                    | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI                     |
-| `auto_update`         | `false`                                            | Pull latest changes on restart (preserves local modifications)                      |
-| `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                                   |
-| `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                          |
-| `hermes_home`         | `.hermes`                                          | Agent profile directory (relative to ~). Change to switch profiles (e.g. "amy")     |
-| `prefer_ipv4_dns`     | `true`                                             | Prioritize IPv4 over IPv6 for DNS resolution                                        |
-| `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Environment variables (API keys, etc.) — non-empty values override `~/.hermes/.env` |
+| Option                | Default                                            | Description                                                                     |
+| --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `git_url`             | `https://github.com/NousResearch/hermes-agent.git` | Git repository URL (clear to reset to default)                                  |
+| `git_ref`             |                                                    | Branch, tag, or commit (empty = repo's default branch)                          |
+| `git_token`           |                                                    | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI                 |
+| `auto_update`         | `false`                                            | Pull latest changes on restart (preserves local modifications)                  |
+| `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                               |
+| `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
+| `hermes_home`         | `.hermes`                                          | Agent profile directory (relative to ~). Change to switch profiles (e.g. "amy") |
+| `prefer_ipv4_dns`     | `true`                                             | Prioritize IPv4 over IPv6 for DNS resolution                                    |
+| `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes .env variables — written to `~/.hermes/.env` on each start               |
 
-API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or `~/.hermes/.env` (full list, via terminal or `hermes setup`). `env_vars` takes precedence over `.env` when both are set.
+API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or `~/.hermes/.env` directly (full list, via terminal or `hermes setup`). Non-empty `env_vars` are written to `.env` on each start, overriding existing entries.
 
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
 
@@ -53,7 +53,7 @@ hermes gateway setup  # Configure messaging platforms
 
 ## Access
 
-The addon is accessible via the **Home Assistant Sidebar** (landing page with embedded terminal, mode switching, and status display) and via direct URLs. Replace `homeassistant.local` with your Home Assistant hostname or IP.
+The add-on is accessible via the **Home Assistant Sidebar** (landing page with embedded terminal, mode switching, and status display) and via direct URLs. Replace `homeassistant.local` with your Home Assistant hostname or IP.
 
 ### Web Terminal
 
@@ -83,28 +83,31 @@ Connect [Open WebUI](https://github.com/open-webui/open-webui), [SillyTavern](ht
 | **8080** | HTTP access (all URLs above, replace 8443 with 8080) |
 | **8443** | HTTPS access (TLS with self-signed cert)             |
 
-Both ports are configurable in the Home Assistant addon network settings. Use HTTPS (8443) for secure access. The HTTP port (8080) is intended for TLS-terminating reverse proxies (Cloudflare, NPM, Caddy, etc.).
+Both ports are configurable in the Home Assistant add-on network settings. Use HTTPS (8443) for secure access. The HTTP port (8080) is intended for TLS-terminating reverse proxies (Cloudflare, NPM, Caddy, etc.).
 
 ### SSH
 
-Via Home Assistant host + docker exec, no SSH server in container required.
+Via Home Assistant host + docker exec, no SSH server in container required. Port 22222 is the default for the Advanced SSH & Web Terminal add-on (adjust if yours differs).
 
 ```bash
 # Plain shell (new session, not shared with web terminal)
-ssh -p <port> -t root@<ha-host> "docker exec -it \$(docker ps -qf name=hermes_agent) bash"
+ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) bash"
 
 # Hermes (shared tmux session — same as Home Assistant sidebar "Hermes" tab)
-ssh -p <port> -t root@<ha-host> "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -u new -A -s hermes bash -l"
+ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -u new -A -s hermes bash -l"
 
 # Terminal (shared tmux session — same as Home Assistant sidebar "Terminal" tab)
-ssh -p <port> -t root@<ha-host> "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -u new -A -s terminal bash"
+ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -u new -A -s terminal bash"
+
+# Copy files (e.g. upload a custom SOUL.md — works even when add-on is stopped)
+scp -P 22222 SOUL.md "root@homeassistant.local:/mnt/data/supervisor/addon_configs/*hermes_agent/.hermes/"
 ```
 
 ### TLS Certificates
 
 On first start, self-signed certificates are auto-generated in `~/.certs/`. To trust the HTTPS connection and avoid browser warnings, install the CA certificate on your devices:
 
-1. Click **CA Cert** in the addon titlebar (or download from `/cert/ca.crt`)
+1. Click **CA Cert** in the add-on titlebar (or download from `/cert/ca.crt`)
 2. Install the certificate:
    - **Windows**: Double-click the .crt file → Install Certificate → Local Machine → Trusted Root Certification Authorities
    - **macOS**: Double-click → Keychain Access → set to "Always Trust"
@@ -114,12 +117,12 @@ On first start, self-signed certificates are auto-generated in `~/.certs/`. To t
 
 To use your own certificates instead of self-signed:
 
-1. Stop the addon
+1. Stop the add-on
 2. Replace `~/.certs/server.crt` and `~/.certs/server.key` with your own
 3. Optionally replace `~/.certs/ca.crt` if you have a custom CA
-4. Start the addon
+4. Start the add-on
 
-The addon will use existing certificates and never overwrite them.
+The add-on will use existing certificates and never overwrite them.
 
 ## Architecture
 
@@ -136,13 +139,13 @@ Login shells start Hermes automatically. Non-login shells provide a plain shell 
 | File                | Persistent? | Purpose                                         |
 | ------------------- | ----------- | ----------------------------------------------- |
 | `~/.bashrc`         | Yes         | Sources .hermes_profile + .env, prompt, aliases |
-| `~/.hermes_profile` | Regenerated | Env vars, PATH, tokens (from addon config)      |
+| `~/.hermes_profile` | Regenerated | Env vars, PATH, tokens (from add-on config)     |
 | `~/.profile`        | Yes         | Sources .bashrc, starts hermes (login shells)   |
 | `~/.tmux.conf`      | Yes         | Terminal config (mouse scroll, history)         |
 
 ### Persistent Storage
 
-`~` is `/config/` (addon-isolated via `addon_config`). Everything survives addon updates and is included in Home Assistant backups:
+`~` is `/config/` (add-on-isolated via `addon_config`). Everything survives add-on updates and is included in Home Assistant backups:
 
 ```
 ~ (/config/)
@@ -169,7 +172,7 @@ Login shells start Hermes automatically. Non-login shells provide a plain shell 
 └── .tmux.conf             # tmux config
 
 /media/                    # Home Assistant media directory (shared, visible in Home Assistant media browser)
-/share/                    # Home Assistant shared directory (shared between all addons)
+/share/                    # Home Assistant shared directory (shared between all add-ons)
 ```
 
 ### Container Toolchain

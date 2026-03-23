@@ -31,7 +31,8 @@ configuration:
     name: Prefer IPv4 DNS
     description: Prioritize IPv4 over IPv6 for DNS resolution (fixes timeouts on some networks).
   env_vars:
-    name: Environment Variables
+    name: Hermes .env Variables
     description: >-
-      Additional environment variables to pass to Hermes.
-      Use for API keys and custom configuration.
+      Written to ~/.hermes/.env on each start.
+      Use for API keys (e.g. OPENROUTER_API_KEY).
+      Non-empty values override existing .env entries.

@@ -332,11 +332,12 @@ if [ -f "$HERMES_HOME/.env" ]; then
     set +a
 fi
 
-# HA addon config env_vars override .env (non-empty values only)
+# Write HA addon config env_vars to .env (non-empty values only)
+# Hermes reads .env via dotenv (override=True), so this is the canonical path
 RESERVED_VARS="HERMES_HOME|HASS_TOKEN|HASS_URL|GITHUB_TOKEN"
 
-ENV_COUNT=$(jq '.env_vars | length' "$OPTIONS_FILE" 2>/dev/null || echo 0)
-if [ "$ENV_COUNT" -gt 0 ]; then
+if [ -f "$HERMES_HOME/.env" ]; then
+    ENV_COUNT=$(jq '.env_vars | length' "$OPTIONS_FILE" 2>/dev/null || echo 0)
     for i in $(seq 0 $((ENV_COUNT - 1))); do
         VAR_NAME=$(jq -r ".env_vars[$i].name" "$OPTIONS_FILE")
         VAR_VALUE=$(jq -r ".env_vars[$i].value" "$OPTIONS_FILE")
@@ -344,9 +345,15 @@ if [ "$ENV_COUNT" -gt 0 ]; then
             echo "[run] Warning: Skipping '$VAR_NAME' (use the dedicated config option instead)"
             continue
         fi
-        [ -n "$VAR_VALUE" ] && export "$VAR_NAME"="$VAR_VALUE"
+        if [ -n "$VAR_VALUE" ]; then
+            if grep -q "^${VAR_NAME}=" "$HERMES_HOME/.env"; then
+                sed -i "s|^${VAR_NAME}=.*|${VAR_NAME}=${VAR_VALUE}|" "$HERMES_HOME/.env"
+            else
+                echo "${VAR_NAME}=${VAR_VALUE}" >> "$HERMES_HOME/.env"
+            fi
+            echo "[run] .env: ${VAR_NAME} set from addon config"
+        fi
     done
-    echo "[run] Exported $ENV_COUNT env var(s)"
 fi
 
 # HA integration: pass through if set
@@ -372,21 +379,20 @@ export API_SERVER_HOST=127.0.0.1
 # ~/.hermes_profile: regenerated every start with all env vars (for SSH/docker-exec sessions)
 cat > /config/.hermes_profile << ENVSH
 export HERMES_HOME="$HERMES_HOME"
-export GOPATH="$GO_DIR"
-export GOBIN="$GO_DIR/bin"
-export NPM_CONFIG_PREFIX="$NODE_DIR"
-export HOMEBREW_PREFIX="$BREW_DIR"
-export HOMEBREW_CELLAR="$BREW_DIR/Cellar"
-export HOMEBREW_REPOSITORY="$BREW_DIR/Homebrew"
 export HERMES_VERSION="$HERMES_VERSION"
-export PATH="$VENV_DIR/bin:$BREW_DIR/sbin:$BREW_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_DIR/bin:\$PATH"
+export API_SERVER_ENABLED=true
+export API_SERVER_HOST=127.0.0.1
+export API_SERVER_PORT=8642
+$([ -n "$GIT_TOKEN" ] && echo "export GITHUB_TOKEN=\"$GIT_TOKEN\"")
+export GOBIN="$GO_DIR/bin"
+export GOPATH="$GO_DIR"
 $([ -n "$HASS_TOKEN" ] && echo "export HASS_TOKEN=\"$HASS_TOKEN\"")
 $([ -n "$HASS_URL" ] && echo "export HASS_URL=\"$HASS_URL\"")
-$([ -n "$GIT_TOKEN" ] && echo "export GITHUB_TOKEN=\"$GIT_TOKEN\"")
-$(jq -r '.env_vars[]? | select(.value != "") | "export \(.name)=\(.value | @sh)"' "$OPTIONS_FILE" 2>/dev/null)
-export API_SERVER_ENABLED=true
-export API_SERVER_PORT=8642
-export API_SERVER_HOST=127.0.0.1
+export HOMEBREW_CELLAR="$BREW_DIR/Cellar"
+export HOMEBREW_PREFIX="$BREW_DIR"
+export HOMEBREW_REPOSITORY="$BREW_DIR/Homebrew"
+export NPM_CONFIG_PREFIX="$NODE_DIR"
+export PATH="$VENV_DIR/bin:$BREW_DIR/sbin:$BREW_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_DIR/bin:\$PATH"
 ENVSH
 
 # ── Section 8: TLS certificates ──────────────────────────────────────
