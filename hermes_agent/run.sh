@@ -250,9 +250,12 @@ if install_needed; then
     echo "[run] Installing Hermes (editable)..."
     cd "$SRC_DIR"
     uv pip install -e ".[all,dev]" 2>&1 | tail -5
-    # mini-swe-agent submodule
+    # Submodules
     if [ -f "$SRC_DIR/mini-swe-agent/pyproject.toml" ]; then
         uv pip install -e "$SRC_DIR/mini-swe-agent" 2>&1 | tail -3
+    fi
+    if [ -f "$SRC_DIR/tinker-atropos/pyproject.toml" ]; then
+        uv pip install -e "$SRC_DIR/tinker-atropos" 2>&1 | tail -3
     fi
     compute_marker > "$MARKER_FILE"
     echo "[run] Install complete"
