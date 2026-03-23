@@ -22,34 +22,29 @@ configuration:
   homeassistant_token:
     name: Home Assistant Token
     description: Long-lived access token for HA API integration (optional).
-  hermes_home:
-    name: Hermes Home Directory
-    description: >-
-      Directory name for Hermes Agent data (relative to /config).
-      Default ".hermes". Change to e.g. "amy" for /config/amy/.
   enable_ports:
     name: Enable HTTP/HTTPS Ports
     description: >-
-      Enable direct HTTP/HTTPS access (terminal + API).
+      Enable direct HTTP/HTTPS access (web terminal + API server).
       Set an access password to secure these ports.
   enable_api:
-    name: Enable OpenAI API
+    name: Enable API Server
     description: >-
-      Enable the OpenAI-compatible API server (/v1/chat/completions).
-      Required for connecting Open WebUI, SillyTavern, etc.
-      The access password doubles as the API key (Authorization: Bearer).
+      Enable the OpenAI-compatible API server (requires direct HTTP/HTTPS access).
+      The access password doubles as the server API key.
   access_password:
     name: Access Password
     description: >-
-      Password for HTTP/HTTPS access (terminal + API).
-      Leave empty for no authentication (LAN-only use).
-      Also used as API key (Authorization: Bearer <password>).
-  prefer_ipv4_dns:
-    name: Prefer IPv4 DNS
-    description: Prioritize IPv4 over IPv6 for DNS resolution (fixes timeouts on some networks).
+      Password for HTTP/HTTPS access (web terminal).
+      Also used as the server API key.
   env_vars:
     name: Hermes .env Variables
     description: >-
       Written to ~/.hermes/.env on each start.
       Use for API keys (e.g. OPENROUTER_API_KEY).
       Non-empty values override existing .env entries.
+  hermes_home:
+    name: Hermes Home Directory
+    description: >-
+      Directory name for Hermes Agent data (relative to /config).
+      Default ".hermes". Change to e.g. "amy" for /config/amy/.

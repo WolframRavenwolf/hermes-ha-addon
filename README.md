@@ -36,9 +36,11 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `auto_update`         | `false`                                            | Pull latest changes on restart (preserves local modifications)                  |
 | `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                               |
 | `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
-| `hermes_home`         | `.hermes`                                          | Agent profile directory (relative to ~). Change to switch profiles (e.g. "amy") |
-| `prefer_ipv4_dns`     | `true`                                             | Prioritize IPv4 over IPv6 for DNS resolution                                    |
+| `enable_ports`        | `false`                                            | Enable direct HTTP/HTTPS access (web terminal + API server)                     |
+| `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server (requires direct HTTP/HTTPS access)     |
+| `access_password`     |                                                    | Password for HTTP/HTTPS access (web terminal). Also used as the server API key  |
 | `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes .env variables — written to `~/.hermes/.env` on each start               |
+| `hermes_home`         | `.hermes`                                          | Agent profile directory (relative to ~). Change to switch profiles (e.g. "amy") |
 
 API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or `~/.hermes/.env` directly (full list, via terminal or `hermes setup`). Non-empty `env_vars` are written to `.env` on each start, overriding existing entries.
 

@@ -24,7 +24,6 @@ HERMES_HOME_DIR=$(opt hermes_home)
 ENABLE_PORTS=$(opt_bool enable_ports)
 ENABLE_API=$(opt_bool enable_api)
 ACCESS_PASSWORD=$(opt access_password)
-PREFER_IPV4=$(opt_bool prefer_ipv4_dns)
 
 # ── Section 2: System setup ─────────────────────────────────────────
 # Timezone: sync /etc/localtime + /etc/timezone from HA's TZ env var
@@ -34,12 +33,13 @@ if [ -n "$TZ" ] && [[ "$TZ" != *..* ]] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
     echo "[run] Timezone: $TZ"
 fi
 
-# IPv4 DNS priority
-if [ "$PREFER_IPV4" = "true" ]; then
-    if ! grep -q "precedence ::ffff:0:0/96  100" /etc/gai.conf 2>/dev/null; then
-        echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
-    fi
-    echo "[run] IPv4 DNS priority: enabled"
+# IPv4 DNS priority (always enabled — no practical IPv6-only home networks)
+if grep -q "^precedence ::ffff:0:0/96  100" /etc/gai.conf 2>/dev/null; then
+    : # already active
+elif grep -q "^#[[:space:]]*precedence ::ffff:0:0/96  100" /etc/gai.conf 2>/dev/null; then
+    sed -i 's/^#[[:space:]]*\(precedence ::ffff:0:0\/96  100\)/\1/' /etc/gai.conf
+else
+    echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
 fi
 
 # Core paths (HOME=/config set in Dockerfile ENV)

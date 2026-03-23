@@ -34,7 +34,6 @@ options:
   enable_ports: false
   enable_api: false
   access_password: ""
-  prefer_ipv4_dns: true
   env_vars:
     - name: "OPENROUTER_API_KEY"
       value: ""
@@ -49,7 +48,6 @@ schema:
   enable_ports: "bool"
   enable_api: "bool"
   access_password: "password?"
-  prefer_ipv4_dns: "bool"
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"
       value: "str"
