@@ -154,12 +154,6 @@ alias la='ls -A'
 alias ll='ls -l'
 alias lla='ls -Al'
 
-# Safety aliases (running as root)
-alias cp='cp -i'
-alias ln='ln -i'
-alias mv='mv -i'
-alias rm='rm -i'
-
 # Alias definitions
 [ -f ~/.bash_aliases ] && . ~/.bash_aliases
 
