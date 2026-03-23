@@ -57,6 +57,23 @@ TTYD_TERMINAL_PORT=49369
 HTTP_PORT=8080
 HTTPS_PORT=8443
 
+# Start nginx early with loading page (replaced with full config after setup)
+cat > /etc/nginx/nginx.conf << LOADCONF
+worker_processes 1;
+pid /var/run/nginx.pid;
+error_log stderr warn;
+events { worker_connections 64; }
+http {
+    server {
+        listen ${INGRESS_PORT};
+        location / { root /var/www; try_files /loading.html =404; }
+        location = /health { return 200 "OK\n"; add_header Content-Type text/plain; }
+    }
+}
+LOADCONF
+nginx
+echo "[run] Loading page active (ingress: $INGRESS_PORT)"
+
 # Create persistent directories (only system infra — Hermes creates its own)
 for d in "$HERMES_HOME" \
          "$NODE_DIR/lib" \
@@ -419,7 +436,6 @@ echo "[run] Nginx configured (ingress: $INGRESS_PORT, HTTP: $HTTP_PORT, HTTPS: $
 GATEWAY_PID=""
 TTYD_TERMINAL_PID=""
 TTYD_HERMES_PID=""
-NGINX_PID=""
 
 start_gateway() {
     echo "[run] Starting Hermes gateway..."
@@ -451,11 +467,10 @@ start_ttyd() {
     echo "[run] ttyd started (hermes PID: $TTYD_HERMES_PID, terminal PID: $TTYD_TERMINAL_PID)"
 }
 
-start_nginx() {
-    echo "[run] Starting nginx..."
-    nginx -g 'daemon off;' &
-    NGINX_PID=$!
-    echo "[run] nginx started (PID: $NGINX_PID)"
+reload_nginx() {
+    echo "[run] Reloading nginx with full config..."
+    nginx -s reload
+    echo "[run] nginx reloaded"
 }
 
 # Register signal handler BEFORE starting services
@@ -463,7 +478,7 @@ trap shutdown SIGTERM SIGINT
 
 start_gateway
 start_ttyd
-start_nginx
+reload_nginx
 
 echo "[run] All services started"
 # Derive base URL from HASS_URL (scheme + host, our port)
@@ -490,10 +505,8 @@ shutdown() {
     echo ""
     echo "[run] Shutting down..."
     # Reverse order: nginx -> ttyd -> gateway
-    if [ -n "$NGINX_PID" ] && kill -0 "$NGINX_PID" 2>/dev/null; then
-        kill "$NGINX_PID" 2>/dev/null
-        echo "[run] nginx stopped"
-    fi
+    nginx -s quit 2>/dev/null || true
+    echo "[run] nginx stopped"
     for pid in "$TTYD_TERMINAL_PID" "$TTYD_HERMES_PID"; do
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null

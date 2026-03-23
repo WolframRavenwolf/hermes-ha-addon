@@ -76,6 +76,7 @@ RUN su - linuxbrew -c \
 COPY run.sh /
 COPY nginx.conf.tpl /etc/nginx/nginx.conf.tpl
 COPY landing.html.tpl /var/www/landing.html.tpl
+COPY loading.html /var/www/loading.html
 COPY brew-wrapper.sh /usr/local/bin/brew-wrapper
 RUN chmod +x /run.sh /usr/local/bin/brew-wrapper
 
