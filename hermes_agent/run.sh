@@ -109,10 +109,10 @@ fi
 # ~/.bashrc: persistent, create-if-missing (user-editable)
 if [ ! -f /config/.bashrc ]; then
     cat > /config/.bashrc << 'BASHRC'
-# Source Hermes environment (paths, variables, tokens)
-[ -f ~/.hermes_profile ] && . ~/.hermes_profile
-# Source Hermes API keys
+# Source Hermes API keys (.env first, then profile overrides)
 [ -f "${HERMES_HOME:=$HOME/.hermes}/.env" ] && set -a && . "$HERMES_HOME/.env" && set +a
+# Source Hermes environment (paths, variables, tokens — overrides .env)
+[ -f ~/.hermes_profile ] && . ~/.hermes_profile
 
 # If not running interactively, stop here
 case $- in
