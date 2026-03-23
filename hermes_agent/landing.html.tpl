@@ -9,7 +9,7 @@
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0b0f14;color:#e6edf3;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
   body{display:flex;flex-direction:column}
   .titlebar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:#111827;border-bottom:1px solid #1f2937;min-height:32px;flex-shrink:0}
-  .titlebar .version{color:#9ca3af;font-size:12px;white-space:nowrap}
+  .titlebar .version{color:#ffd700;font-size:12px;white-space:nowrap}
   .titlebar .buttons{display:flex;gap:6px;margin:0 auto}
   .titlebar .status{display:flex;gap:6px;font-size:11px;color:#9ca3af}
   .btn{background:#009ac7;color:white;border:0;border-radius:6px;padding:4px 10px;cursor:pointer;text-decoration:none;display:inline-block;font-size:12px}
