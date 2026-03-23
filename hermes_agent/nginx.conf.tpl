@@ -11,6 +11,8 @@ http {
     default_type application/octet-stream;
     sendfile on;
     keepalive_timeout 65;
+    client_body_buffer_size 16m;
+    client_max_body_size 0;
 
     log_format minimal '$remote_addr - $request_uri $status';
     access_log /dev/stdout minimal;
