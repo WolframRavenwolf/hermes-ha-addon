@@ -335,7 +335,7 @@ if [ "$ENV_COUNT" -gt 0 ]; then
             echo "[run] Warning: Skipping '$VAR_NAME' (use the dedicated config option instead)"
             continue
         fi
-        export "$VAR_NAME"="$VAR_VALUE"
+        [ -n "$VAR_VALUE" ] && export "$VAR_NAME"="$VAR_VALUE"
     done
     echo "[run] Exported $ENV_COUNT env var(s)"
 fi

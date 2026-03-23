@@ -32,7 +32,9 @@ options:
   homeassistant_token: ""
   hermes_home: ".hermes"
   prefer_ipv4_dns: true
-  env_vars: []
+  env_vars:
+    - name: "OPENROUTER_API_KEY"
+      value: ""
 schema:
   git_url: "url?"
   git_ref: "str?"
