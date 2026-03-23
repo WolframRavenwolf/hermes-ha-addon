@@ -176,15 +176,18 @@ if [ ! -f /config/.profile ]; then
     cat > /config/.profile << 'PROFILE'
 # Source .bashrc for paths and aliases
 [ -f ~/.bashrc ] && . ~/.bashrc
-# Start Hermes Agent — clean exit ends session, crash drops to shell
-hermes
-_exit=$?
-if [ $_exit -eq 0 ]; then
-    exit 0
+# Start Hermes Agent only in the "hermes" tmux session (web terminal via ttyd)
+# Other sessions (terminal, Hermes' own tool, SSH) get a plain shell
+if [ "$(tmux display-message -p '#S' 2>/dev/null)" = "hermes" ]; then
+    hermes
+    _exit=$?
+    if [ $_exit -eq 0 ]; then
+        exit 0
+    fi
+    echo ""
+    echo "Hermes exited with code $_exit. Shell is available for debugging."
+    echo "Run 'hermes' to restart, or 'exit' to close this session."
 fi
-echo ""
-echo "Hermes exited with code $_exit. Shell is available for debugging."
-echo "Run 'hermes' to restart, or 'exit' to close this session."
 PROFILE
     echo "[run] Created default .profile"
 fi
