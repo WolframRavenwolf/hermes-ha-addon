@@ -44,6 +44,8 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 
 API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or `~/.hermes/.env` directly (full list, via terminal or `hermes setup`). Non-empty `env_vars` are written to `.env` on each start, overriding existing entries.
 
+**Note:** Values added via `env_vars` are not removed or reset from `.env` when cleared or removed in the Home Assistant UI -- edit `~/.hermes/.env` directly to remove them.
+
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
 
 ```bash

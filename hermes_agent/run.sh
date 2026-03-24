@@ -178,23 +178,12 @@ BASHRC
 fi
 
 # ~/.profile: persistent, create-if-missing (user-editable)
+# Hermes autostart is handled by /usr/local/bin/start-hermes (via ttyd),
+# not .profile, to avoid recursion when Hermes spawns login subshells.
 if [ ! -f /config/.profile ]; then
     cat > /config/.profile << 'PROFILE'
 # Source .bashrc for paths and aliases
 [ -f ~/.bashrc ] && . ~/.bashrc
-# Start Hermes Agent only in the "hermes" tmux session, and only once
-# HERMES_RUNNING prevents recursion when Hermes spawns subshells
-if [ "$(tmux display-message -p '#S' 2>/dev/null)" = "hermes" ] && [ -z "$HERMES_RUNNING" ]; then
-    export HERMES_RUNNING=1
-    hermes
-    _exit=$?
-    if [ $_exit -eq 0 ]; then
-        exit 0
-    fi
-    echo ""
-    echo "Hermes exited with code $_exit. Shell is available for debugging."
-    echo "Run 'hermes' to restart, or 'exit' to close this session."
-fi
 PROFILE
     echo "[run] Created default .profile"
 fi
@@ -533,13 +522,26 @@ start_gateway() {
 
 start_ttyd() {
     echo "[run] Starting ttyd (hermes: ${TTYD_HERMES_PORT}, terminal: ${TTYD_TERMINAL_PORT})..."
-    # Hermes: login shell (starts hermes via .profile)
+    # Hermes startup wrapper (avoids .profile autostart recursion)
+    cat > /usr/local/bin/start-hermes << 'WRAPPER'
+#!/bin/bash
+source ~/.bashrc
+hermes
+ret=$?
+if [ $ret -eq 0 ]; then exit 0; fi
+echo ""
+echo "Hermes exited with code $ret. Shell is available for debugging."
+echo "Run 'hermes' to restart, or 'exit' to close."
+exec bash
+WRAPPER
+    chmod +x /usr/local/bin/start-hermes
+    # Hermes: dedicated wrapper (sources .bashrc, starts hermes, fallback shell on error)
     ttyd \
         --port "${TTYD_HERMES_PORT}" \
         --interface 127.0.0.1 \
         --base-path /hermes/ \
         --writable -d 3 \
-        tmux -u new -A -s hermes /usr/bin/bash -l &
+        tmux -u new -A -s hermes /usr/local/bin/start-hermes &
     TTYD_HERMES_PID=$!
     # Terminal: non-login shell (plain shell)
     ttyd \
