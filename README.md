@@ -189,9 +189,10 @@ Pre-installed at build time:
 
 - **Languages**: Go 1.22, Node.js 22, Python 3.11
 - **Browser**: Chromium, agent-browser
-- **Dev tools**: bat, fd-find, gh (GitHub CLI), git, jq, nano, ripgrep, tree, vim
+- **Dev tools**: bat, bc, fd-find, gh (GitHub CLI), git, htop, jq, moreutils, nano, ripgrep, tree, vim, yq
+- **Graphics**: ghostscript, imagemagick
 - **Media**: ffmpeg
-- **Networking**: curl, dnsutils, netcat, openssh-client, wget
+- **Networking**: curl, dnsutils, netcat, openssh-client, ping, wget
 - **Package managers**: go, Homebrew (Linuxbrew), npm, uv
 - **System**: bash-completion, command-not-found, rsync, sqlite3, tmux, unzip/zip
 

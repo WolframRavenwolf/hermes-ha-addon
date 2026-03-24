@@ -17,9 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         file \
         # Python deps
         python3-pip python3-venv \
-        # Extra tools
-        bash-completion bat command-not-found dnsutils fd-find less nano \
-        netcat-openbsd openssh-client tree unzip vim wget zip \
+        # Important Extras
+        iputils-ping less netcat-openbsd \
+        # Standard Extras
+        bash-completion command-not-found nano openssh-client wget \
+        # Optional Extras
+        bat bc dnsutils fd-find ghostscript htop imagemagick moreutils tree unzip vim yq zip \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/batcat /usr/local/bin/bat
 

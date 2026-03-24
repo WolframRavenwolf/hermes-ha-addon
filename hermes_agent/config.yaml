@@ -1,5 +1,5 @@
 name: Hermes Agent
-version: "0.9.23"
+version: "0.9.24"
 slug: hermes_agent
 description: "The self-improving AI agent built by Nous Research. Home Assistant add-on by Wolfram Ravenwolf."
 url: "https://github.com/WolframRavenwolf/hermes-ha-addon"
