@@ -37,7 +37,7 @@ ENV UV_LINK_MODE=copy
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g npm@latest agent-browser
+    && npm install -g agent-browser
 
 # ── GitHub CLI ───────────────────────────────────────────────────────
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
