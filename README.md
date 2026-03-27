@@ -2,7 +2,11 @@
 
 > The self-improving AI agent built by Nous Research. Home Assistant add-on by Wolfram Ravenwolf.
 
+![Hermes Agent running in Home Assistant](hermes-ha-addon.png)
+
 [Hermes Agent](https://hermes-agent.nousresearch.com/) packaged as a [Home Assistant](https://home-assistant.io/) add-on/app. Persistent AI agent with memory, self-improving skills, multi-platform messaging, and a plugin architecture for custom tools.
+
+https://github.com/WolframRavenwolf/hermes-ha-addon/releases/download/v1.0.0/hermes-ha-addon.mp4
 
 ## Features
 
