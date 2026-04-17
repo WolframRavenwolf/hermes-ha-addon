@@ -22,6 +22,11 @@ configuration:
   homeassistant_token:
     name: Home Assistant Token
     description: Long-lived access token for HA API integration (optional).
+  enable_dashboard:
+    name: Enable Web Dashboard
+    description: >-
+      ⚠️ Enable web dashboard on direct HTTP/HTTPS ports (configured under Network below).
+      Set an access password to secure these ports.
   enable_terminal:
     name: Enable Web Terminal
     description: >-

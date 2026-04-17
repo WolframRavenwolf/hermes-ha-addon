@@ -29,6 +29,10 @@ http {
         server 127.0.0.1:8642;
     }
 
+    upstream hermes_dashboard {
+        server 127.0.0.1:%%DASHBOARD_PORT%%;
+    }
+
     # ── Ingress (HA sidebar — landing page) ──────────────────────────
     server {
         listen %%INGRESS_PORT%%;
@@ -78,6 +82,19 @@ http {
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
         }
+
+        # DASHBOARD_START
+        location = /dashboard { return 302 /dashboard/; }
+        location /dashboard/ {
+            proxy_pass http://hermes_dashboard/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_buffering off;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
+        # DASHBOARD_END
 
         # CA certificate download
         location = /cert/ca.crt {

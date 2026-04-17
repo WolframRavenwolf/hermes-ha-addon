@@ -21,8 +21,8 @@ ports:
   8080/tcp: null
   8443/tcp: 8443
 ports_description:
-  8080/tcp: "HTTP: /hermes/ (agent) · /terminal/ (shell) · /v1/ (OpenAI API)"
-  8443/tcp: "HTTPS: /hermes/ (agent) · /terminal/ (shell) · /v1/ (OpenAI API) — TLS (self-signed cert)"
+  8080/tcp: "HTTP: /hermes/ (agent) · /dashboard/ (web UI) · /terminal/ (shell) · /v1/ (OpenAI API)"
+  8443/tcp: "HTTPS: /hermes/ (agent) · /dashboard/ (web UI) · /terminal/ (shell) · /v1/ (OpenAI API) — TLS (self-signed cert)"
 options:
   git_url: "https://github.com/NousResearch/hermes-agent.git"
   git_ref: ""
@@ -31,6 +31,7 @@ options:
   hass_url: "http://homeassistant.local:8123"
   homeassistant_token: ""
   hermes_home: ".hermes"
+  enable_dashboard: false
   enable_terminal: false
   enable_api: false
   access_password: ""
@@ -45,6 +46,7 @@ schema:
   hass_url: "url?"
   homeassistant_token: "password?"
   hermes_home: "str?"
+  enable_dashboard: "bool"
   enable_terminal: "bool"
   enable_api: "bool"
   access_password: "password?"

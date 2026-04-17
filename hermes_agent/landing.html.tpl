@@ -20,7 +20,7 @@
   .term{flex:1;overflow:hidden;position:relative}
   .term iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0;background:black}
   .term iframe.hidden{display:none}
-  .term .no-terminal{display:none;justify-content:center;align-items:center;height:100%;color:#9ca3af;font-size:14px}
+  .term .no-services{display:none;justify-content:center;align-items:center;height:100%;color:#9ca3af;font-size:14px}
 </style>
 </head>
 <body>
@@ -29,37 +29,54 @@
   <span class="version">%%HERMES_VERSION%%</span>
   <div class="buttons">
     <button class="btn active" id="btnHermes" onclick="setMode('hermes')">Hermes</button>
+    <button class="btn secondary" id="btnDashboard" onclick="setMode('dashboard')" style="display:none">Dashboard</button>
     <button class="btn secondary" id="btnTerminal" onclick="setMode('terminal')">Terminal</button>
     <a class="btn green" href="./cert/ca.crt" download="hermes-agent-ca.crt">CA Cert</a>
     <a class="btn small" id="btnAppInfo" href="/config/app/%%ADDON_SLUG%%/info" target="_top" onclick="document.querySelectorAll('iframe').forEach(function(f){f.remove()})" style="display:none">App Info</a>
   </div>
   <div class="status">
     <span id="statusGateway">&#x23F3; Gateway</span>
+    <span id="statusDashboard" style="display:none">&#x23F3; Dashboard</span>
     <span id="statusSecure">&#x1F512;</span>
   </div>
 </div>
 
 <div class="term">
   <iframe id="frameHermes" src="./hermes/" title="Hermes Agent"></iframe>
+  <iframe id="frameDashboard" src="" title="Dashboard" class="hidden"></iframe>
   <iframe id="frameTerminal" src="./terminal/" title="Terminal" class="hidden"></iframe>
-  <div id="noTerminal" class="no-terminal">Web terminal is available via the Home Assistant sidebar.</div>
+  <div id="noServices" class="no-services">These services are available via the Home Assistant sidebar.</div>
 </div>
 
 <script>
 (function() {
   var frameHermes = document.getElementById('frameHermes');
+  var frameDashboard = document.getElementById('frameDashboard');
   var frameTerminal = document.getElementById('frameTerminal');
   var btnHermes = document.getElementById('btnHermes');
+  var btnDashboard = document.getElementById('btnDashboard');
   var btnTerminal = document.getElementById('btnTerminal');
   var current = 'hermes';
+  var dashboardLoaded = false;
+
+  var showDashboard = %%SHOW_DASHBOARD%%;
+  if (showDashboard) {
+    btnDashboard.style.display = '';
+  }
 
   window.setMode = function(mode) {
     if (mode === current) return;
     current = mode;
     frameHermes.className = mode === 'hermes' ? '' : 'hidden';
+    frameDashboard.className = mode === 'dashboard' ? '' : 'hidden';
     frameTerminal.className = mode === 'terminal' ? '' : 'hidden';
     btnHermes.className = mode === 'hermes' ? 'btn active' : 'btn secondary';
+    btnDashboard.className = mode === 'dashboard' ? 'btn active' : 'btn secondary';
     btnTerminal.className = mode === 'terminal' ? 'btn active' : 'btn secondary';
+    if (mode === 'dashboard' && !dashboardLoaded) {
+      frameDashboard.src = './dashboard/';
+      dashboardLoaded = true;
+    }
   };
 
   // Detect context: iframe = HA ingress, top-level = direct port access
@@ -68,15 +85,21 @@
     // Ingress: always show everything
     document.getElementById('btnAppInfo').style.display = '';
   } else {
-    // Direct ports: respect config flags
+    // Direct ports: respect config flags independently
     var showTerminal = %%SHOW_TERMINAL%%;
+    var showDashboardPorts = %%SHOW_DASHBOARD_PORTS%%;
     if (!showTerminal) {
       btnHermes.style.display = 'none';
       btnTerminal.style.display = 'none';
       frameHermes.src = '';
       frameHermes.className = 'hidden';
       frameTerminal.src = '';
-      document.getElementById('noTerminal').style.display = 'flex';
+    }
+    if (!showDashboardPorts) {
+      btnDashboard.style.display = 'none';
+    }
+    if (!showTerminal && !showDashboardPorts) {
+      document.getElementById('noServices').style.display = 'flex';
     }
   }
 
@@ -89,6 +112,16 @@
   }).catch(function() {
     g.textContent = '\uD83D\uDCA4 Gateway';
   });
+
+  if (showDashboard) {
+    var d = document.getElementById('statusDashboard');
+    d.style.display = '';
+    fetch('./dashboard/api/status', {cache:'no-store'}).then(function(r) {
+      d.textContent = r.ok ? '\u2705 Dashboard' : '\uD83D\uDCA4 Dashboard';
+    }).catch(function() {
+      d.textContent = '\uD83D\uDCA4 Dashboard';
+    });
+  }
 })();
 </script>
 </body>

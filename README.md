@@ -14,6 +14,7 @@
 - **OpenAI-compatible API** -- connect any chat frontend ([Open WebUI](https://github.com/open-webui/open-webui), [SillyTavern](https://github.com/SillyTavern/SillyTavern), etc.) via `/v1/`
 - **Plugin architecture** -- custom tools, commands, and hooks without forking
 - **Self-modifiable source** -- editable install lets the agent read and modify its own code
+- **Web dashboard** -- browser-based management UI for config, API keys, sessions, analytics, logs, cron, and skills
 - **Persistent web terminal** -- full CLI access via tmux-backed ttyd through the Home Assistant sidebar
 - **HTTP + HTTPS** -- direct LAN access with auto-generated TLS certificates
 - **Full persistence** -- source code, venv, Homebrew, npm, Go, and all agent data survive add-on updates
@@ -38,6 +39,7 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `auto_update`         | `false`                                            | Pull latest changes on restart (preserves local modifications)                  |
 | `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                               |
 | `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
+| `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
 | `enable_terminal`     | `false`                                            | Enable web terminal on direct HTTP/HTTPS ports                                  |
 | `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server on direct HTTP/HTTPS ports              |
 | `access_password`     |                                                    | Password for HTTP/HTTPS access (web terminal). Also used as the server API key  |
@@ -61,13 +63,14 @@ hermes gateway setup  # Configure messaging platforms
 
 The add-on is accessible via the **Home Assistant Sidebar** (landing page with embedded terminal, mode switching, and status display) and, optionally, via direct URLs. Replace `homeassistant.local` with your Home Assistant hostname or IP.
 
-Direct HTTP/HTTPS access requires `enable_terminal` (**Enable Web Terminal**) and/or `enable_api` (**Enable API Server**) in the add-on configuration. Set an **Access Password** to secure these ports (username: `hermes`).
+Direct HTTP/HTTPS access requires `enable_dashboard` (**Enable Web Dashboard**), `enable_terminal` (**Enable Web Terminal**), and/or `enable_api` (**Enable API Server**) in the add-on configuration. Set an **Access Password** to secure these ports (username: `hermes`).
 
-### Web Terminal
+### Web Terminal & Dashboard
 
 | URL                                            | Description                                                              |
 | ---------------------------------------------- | ------------------------------------------------------------------------ |
 | `https://homeassistant.local:8443/hermes/`     | Hermes Agent (starts hermes, crash drops to shell)                       |
+| `https://homeassistant.local:8443/dashboard/`  | Web dashboard (config, API keys, sessions, analytics, logs)              |
 | `https://homeassistant.local:8443/terminal/`   | Shell terminal (non-login shell -- plain shell, hermes not auto-started) |
 | `https://homeassistant.local:8443/cert/ca.crt` | CA certificate download (for trusting self-signed HTTPS)                 |
 
@@ -136,11 +139,12 @@ The add-on will use existing certificates and never overwrite them.
 
 ## Architecture
 
-Three services in a Debian Bookworm container:
+Four services in a Debian Bookworm container:
 
 1. **Hermes Gateway** (`hermes gateway run`) -- persistent AI agent daemon with OpenAI-compatible API server and messaging platform connectors. Logs visible in the Home Assistant add-on log and in `~/.hermes/logs/gateway.log`.
-2. **ttyd** (x2) -- web terminals backed by persistent tmux sessions (`hermes` + `terminal`)
-3. **nginx** -- HTTP, HTTPS, and Home Assistant ingress proxy routing to terminal + API
+2. **Hermes Dashboard** (`hermes dashboard`) -- browser-based management UI (FastAPI + React) for config, API keys, sessions, analytics, logs, cron jobs, and skills.
+3. **ttyd** (x2) -- web terminals backed by persistent tmux sessions (`hermes` + `terminal`)
+4. **nginx** -- HTTP, HTTPS, and Home Assistant ingress proxy routing to dashboard + terminal + API
 
 ### Shell Environment
 
