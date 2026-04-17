@@ -569,8 +569,10 @@ start_gateway() {
     mkdir -p "$HERMES_HOME/logs"
     cd "$HERMES_HOME"
     hermes gateway run 2>&1 | tee -a "$HERMES_HOME/logs/gateway.log" &
-    GATEWAY_PID=$!
-    echo "[run] Gateway started (PID: $GATEWAY_PID)"
+    TEE_PID=$!
+    sleep 0.5  # let gateway fork
+    GATEWAY_PID=$(pgrep -f "hermes gateway run" | sort -n | tail -1 || echo "$TEE_PID")
+    echo "[run] Gateway started (PID: $GATEWAY_PID, tee: $TEE_PID)"
 }
 
 start_ttyd() {
@@ -689,10 +691,11 @@ while true; do
     if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
         set +e; wait "$GATEWAY_PID" 2>/dev/null; EXIT_CODE=$?; set -e
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "[run] Gateway exited normally"
-            break
+            echo "[run] Gateway exited normally (code 0) — restarting in 3s..."
+            echo "[run] (Use the shutdown handler to stop the container.)"
+        else
+            echo "[run] Gateway exited unexpectedly (code: $EXIT_CODE), restarting in 3s..."
         fi
-        echo "[run] Gateway exited unexpectedly (code: $EXIT_CODE), restarting in 3s..."
         sleep 3
         start_gateway
     fi
