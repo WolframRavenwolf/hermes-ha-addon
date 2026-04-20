@@ -55,13 +55,30 @@
 
         # DASHBOARD_START
         location = /dashboard { return 302 /dashboard/; }
-        location /dashboard/api/ {
+        # Public health endpoint — landing-page status indicator calls this
+        # unauthenticated. Mirrors Hermes' own _PUBLIC_API_PATHS whitelist.
+        location = /dashboard/api/status {
             %%AUTH_BASIC_OFF%%
-            proxy_pass http://hermes_dashboard/api/;
+            proxy_pass http://hermes_dashboard/api/status;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header Authorization "Bearer %%DASHBOARD_TOKEN%%";
+            proxy_buffering off;
+        }
+        # All other dashboard API calls: require client to echo the SPA's
+        # injected Bearer token. Only users who loaded /dashboard/ (gated
+        # by htpasswd) ever see the token, so this closes the drive-by API
+        # access hole without adding a second auth layer in the browser.
+        location /dashboard/api/ {
+            %%AUTH_BASIC_OFF%%
+            if ($http_authorization != "Bearer %%DASHBOARD_TOKEN%%") {
+                return 401;
+            }
+            proxy_pass http://hermes_dashboard/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
             proxy_buffering off;
             proxy_read_timeout 300s;
             proxy_send_timeout 300s;
@@ -157,14 +174,32 @@
 
         # DASHBOARD_START
         location = /dashboard { return 302 /dashboard/; }
-        location /dashboard/api/ {
+        # Public health endpoint — landing-page status indicator calls this
+        # unauthenticated. Mirrors Hermes' own _PUBLIC_API_PATHS whitelist.
+        location = /dashboard/api/status {
             %%AUTH_BASIC_OFF%%
-            proxy_pass http://hermes_dashboard/api/;
+            proxy_pass http://hermes_dashboard/api/status;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-Proto https;
             proxy_set_header Authorization "Bearer %%DASHBOARD_TOKEN%%";
+            proxy_buffering off;
+        }
+        # All other dashboard API calls: require client to echo the SPA's
+        # injected Bearer token. Only users who loaded /dashboard/ (gated
+        # by htpasswd) ever see the token, so this closes the drive-by API
+        # access hole without adding a second auth layer in the browser.
+        location /dashboard/api/ {
+            %%AUTH_BASIC_OFF%%
+            if ($http_authorization != "Bearer %%DASHBOARD_TOKEN%%") {
+                return 401;
+            }
+            proxy_pass http://hermes_dashboard/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-Proto https;
             proxy_buffering off;
             proxy_read_timeout 300s;
             proxy_send_timeout 300s;
