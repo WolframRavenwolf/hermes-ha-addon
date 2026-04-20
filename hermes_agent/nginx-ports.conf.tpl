@@ -55,6 +55,17 @@
 
         # DASHBOARD_START
         location = /dashboard { return 302 /dashboard/; }
+        location /dashboard/api/ {
+            %%AUTH_BASIC_OFF%%
+            proxy_pass http://hermes_dashboard/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Authorization "Bearer %%DASHBOARD_TOKEN%%";
+            proxy_buffering off;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
         location /dashboard/ {
             proxy_pass http://hermes_dashboard/;
             proxy_http_version 1.1;
@@ -146,6 +157,18 @@
 
         # DASHBOARD_START
         location = /dashboard { return 302 /dashboard/; }
+        location /dashboard/api/ {
+            %%AUTH_BASIC_OFF%%
+            proxy_pass http://hermes_dashboard/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Authorization "Bearer %%DASHBOARD_TOKEN%%";
+            proxy_buffering off;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+        }
         location /dashboard/ {
             proxy_pass http://hermes_dashboard/;
             proxy_http_version 1.1;

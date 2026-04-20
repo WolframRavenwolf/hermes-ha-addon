@@ -563,6 +563,7 @@ GATEWAY_PID=""
 TTYD_TERMINAL_PID=""
 TTYD_HERMES_PID=""
 DASHBOARD_PID=""
+DASHBOARD_TOKEN=""
 
 start_gateway() {
     echo "[run] Starting Hermes gateway..."
@@ -621,6 +622,34 @@ start_dashboard() {
     echo "[run] Dashboard started (PID: $DASHBOARD_PID)"
 }
 
+# Read the dashboard's ephemeral session token and inject it into nginx config.
+# The dashboard generates a random token on each start and embeds it in index.html.
+# nginx auth_basic and HA Ingress both consume/strip the Authorization header,
+# so the browser's Bearer token never reaches the dashboard backend.
+# We read the token from the dashboard's HTML and inject it via proxy_set_header.
+inject_dashboard_token() {
+    if [ "$DASHBOARD_AVAILABLE" != "true" ]; then
+        return
+    fi
+    echo "[run] Waiting for dashboard token..."
+    local token=""
+    for i in $(seq 1 15); do
+        token=$(curl -s "http://127.0.0.1:${DASHBOARD_PORT}/" 2>/dev/null \
+            | grep -oP '__HERMES_SESSION_TOKEN__="\K[^"]+' || true)
+        if [ -n "$token" ]; then
+            break
+        fi
+        sleep 2
+    done
+    if [ -z "$token" ]; then
+        echo "[run] Warning: could not read dashboard token (dashboard API auth may not work)"
+        # Use a placeholder so nginx config is still valid
+        token="UNAVAILABLE"
+    fi
+    DASHBOARD_TOKEN="$token"
+    echo "[run] Dashboard token obtained (${#token} chars)"
+}
+
 reload_nginx() {
     echo "[run] Reloading nginx with full config..."
     nginx -s reload
@@ -633,6 +662,14 @@ trap shutdown SIGTERM SIGINT
 start_gateway
 start_ttyd
 start_dashboard
+inject_dashboard_token
+
+# Inject the dashboard token into the already-rendered nginx configs
+if [ -n "$DASHBOARD_TOKEN" ]; then
+    sed -i "s|%%DASHBOARD_TOKEN%%|${DASHBOARD_TOKEN}|g" /etc/nginx/nginx.conf
+    [ -f /etc/nginx/ports.conf ] && sed -i "s|%%DASHBOARD_TOKEN%%|${DASHBOARD_TOKEN}|g" /etc/nginx/ports.conf
+fi
+
 reload_nginx
 
 echo "[run] All services started"
