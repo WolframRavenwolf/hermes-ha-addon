@@ -275,21 +275,61 @@ fi
 
 # Build dashboard web frontend
 if [ -f "$SRC_DIR/web/package.json" ]; then
-    # Patch for reverse-proxy: relative API paths (idempotent)
+    # ── Patches for reverse-proxy compatibility (idempotent) ──
+    # The upstream dashboard assumes it's served at the URL root, using
+    # absolute paths (/api/*, /dashboard-plugins/*) that break behind a
+    # reverse proxy. We patch three files so ALL API and plugin requests
+    # are prefixed with the SPA's actual mount point — stable across HA
+    # Ingress, direct ports, custom reverse proxies, and React Router
+    # client-side navigation.
     DASHBOARD_REBUILD="false"
-    if grep -q 'const BASE = ""' "$SRC_DIR/web/src/lib/api.ts" 2>/dev/null; then
-        sed -i 's|const BASE = ""|const BASE = "."|' "$SRC_DIR/web/src/lib/api.ts"
+
+    # 1. api.ts: compute BASE from import.meta.url (the JS chunk's runtime URL).
+    #    Stripping the trailing slash off `{SPA_ROOT}/assets/../` gives the
+    #    stable mount path. Also exported so usePlugins.ts can reuse it.
+    if ! grep -q 'HA-ADDON-BASE-PATCHED' "$SRC_DIR/web/src/lib/api.ts" 2>/dev/null; then
+        if grep -qE '^const BASE = ' "$SRC_DIR/web/src/lib/api.ts" 2>/dev/null; then
+            sed -i 's|^const BASE = .*|export const BASE = new URL("..", import.meta.url).pathname.replace(/\\/$/, ""); /* HA-ADDON-BASE-PATCHED */|' "$SRC_DIR/web/src/lib/api.ts"
+            DASHBOARD_REBUILD="true"
+        fi
+    fi
+
+    # 2. usePlugins.ts: prefix hardcoded /dashboard-plugins/* URLs with BASE so
+    #    plugin JS/CSS loads via the same reverse-proxy route as /api/. Depends
+    #    on patch 1 having exported BASE — skip if api.ts wasn't patched.
+    #    Sanity-check surfaces a warning if upstream changes the URL syntax
+    #    (e.g. switches from template literals to string concatenation).
+    if grep -q 'HA-ADDON-BASE-PATCHED' "$SRC_DIR/web/src/lib/api.ts" 2>/dev/null && \
+       [ -f "$SRC_DIR/web/src/plugins/usePlugins.ts" ] && \
+       ! grep -q 'HA-ADDON-PLUGINS-PATCHED' "$SRC_DIR/web/src/plugins/usePlugins.ts" 2>/dev/null; then
+        sed -i \
+            -e 's|import { api } from "@/lib/api";|import { api, BASE } from "@/lib/api"; /* HA-ADDON-PLUGINS-PATCHED */|' \
+            -e 's|`/dashboard-plugins/|`${BASE}/dashboard-plugins/|g' \
+            "$SRC_DIR/web/src/plugins/usePlugins.ts"
+        if ! grep -q '${BASE}/dashboard-plugins/' "$SRC_DIR/web/src/plugins/usePlugins.ts" 2>/dev/null; then
+            echo "[run] WARNING: usePlugins.ts URL pattern changed upstream — dashboard plugins may 404"
+        fi
         DASHBOARD_REBUILD="true"
     fi
-    # Clean up wrongly-placed base: from previous versions
-    sed -i '/^\s*base:.*"\.\/".*,$/d' "$SRC_DIR/web/vite.config.ts" 2>/dev/null || true
-    # Detect stale build (absolute paths in output → needs rebuild with --base=./)
+
+    # 3. vite.config.ts: inject base:"./" into defineConfig (HTML asset paths).
+    #    Ensures npm run build (called by `hermes update` / `hermes web`) also
+    #    produces relative script/link hrefs, not just our explicit vite build.
+    if ! grep -q 'HA-ADDON-BASE-INJECTED' "$SRC_DIR/web/vite.config.ts" 2>/dev/null; then
+        # Clean up bare base: "./" lines from pre-marker versions (e.g. 1.0.3-dev)
+        sed -i '/^\s*base:\s*"\.\/",\s*$/d' "$SRC_DIR/web/vite.config.ts" 2>/dev/null || true
+        sed -i 's|export default defineConfig({|export default defineConfig({\n  /* HA-ADDON-BASE-INJECTED */\n  base: "./",|' "$SRC_DIR/web/vite.config.ts"
+        DASHBOARD_REBUILD="true"
+    fi
+
+    # 4. Detect stale build (absolute paths in output → needs rebuild)
     if grep -q 'src="/assets/' "$SRC_DIR/hermes_cli/web_dist/index.html" 2>/dev/null; then
         DASHBOARD_REBUILD="true"
     fi
+
     if [ "$DASHBOARD_REBUILD" = "true" ] || [ ! -d "$SRC_DIR/hermes_cli/web_dist/assets" ]; then
         echo "[run] Building dashboard frontend..."
-        if (cd "$SRC_DIR/web" && npm install --silent 2>&1 | tail -3 && npx vite build --base=./ --outDir ../hermes_cli/web_dist --emptyOutDir 2>&1 | tail -3); then
+        if (cd "$SRC_DIR/web" && npm install --silent 2>&1 | tail -3 && npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir 2>&1 | tail -3); then
             echo "[run] Dashboard frontend built"
         else
             echo "[run] Warning: dashboard frontend build failed (dashboard will not be available)"
