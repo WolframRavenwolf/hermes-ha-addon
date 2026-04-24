@@ -61,7 +61,10 @@
             %%AUTH_BASIC_OFF%%
             proxy_pass http://hermes_dashboard/api/status;
             proxy_http_version 1.1;
-            proxy_set_header Host $host;
+            # Dashboard binds to 127.0.0.1 and validates Host for DNS-rebinding protection.
+            # Preserve the external host separately, but send the upstream host it expects.
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header Authorization "Bearer %%DASHBOARD_TOKEN%%";
             proxy_buffering off;
@@ -77,7 +80,10 @@
             }
             proxy_pass http://hermes_dashboard/api/;
             proxy_http_version 1.1;
-            proxy_set_header Host $host;
+            # Dashboard binds to 127.0.0.1 and validates Host for DNS-rebinding protection.
+            # Preserve the external host separately, but send the upstream host it expects.
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_buffering off;
             proxy_read_timeout 300s;
@@ -86,7 +92,10 @@
         location /dashboard/ {
             proxy_pass http://hermes_dashboard/;
             proxy_http_version 1.1;
-            proxy_set_header Host $host;
+            # Dashboard binds to 127.0.0.1 and validates Host for DNS-rebinding protection.
+            # Preserve the external host separately, but send the upstream host it expects.
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_buffering off;
             proxy_read_timeout 300s;
@@ -180,7 +189,10 @@
             %%AUTH_BASIC_OFF%%
             proxy_pass http://hermes_dashboard/api/status;
             proxy_http_version 1.1;
-            proxy_set_header Host $host;
+            # Dashboard binds to 127.0.0.1 and validates Host for DNS-rebinding protection.
+            # Preserve the external host separately, but send the upstream host it expects.
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-Proto https;
             proxy_set_header Authorization "Bearer %%DASHBOARD_TOKEN%%";
@@ -197,7 +209,10 @@
             }
             proxy_pass http://hermes_dashboard/api/;
             proxy_http_version 1.1;
-            proxy_set_header Host $host;
+            # Dashboard binds to 127.0.0.1 and validates Host for DNS-rebinding protection.
+            # Preserve the external host separately, but send the upstream host it expects.
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-Proto https;
             proxy_buffering off;
@@ -207,7 +222,10 @@
         location /dashboard/ {
             proxy_pass http://hermes_dashboard/;
             proxy_http_version 1.1;
-            proxy_set_header Host $host;
+            # Dashboard binds to 127.0.0.1 and validates Host for DNS-rebinding protection.
+            # Preserve the external host separately, but send the upstream host it expects.
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header X-Forwarded-Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-Proto https;
             proxy_buffering off;
