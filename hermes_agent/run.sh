@@ -321,7 +321,7 @@ if [ -f "$SRC_DIR/web/package.json" ]; then
        ! grep -q 'HA-ADDON-ROUTER-BASENAME-PATCHED' "$SRC_DIR/web/src/main.tsx" 2>/dev/null; then
         sed -i \
             -e 's|import { BrowserRouter } from "react-router-dom";|import { BrowserRouter } from "react-router-dom";\nimport { BASE } from "@/lib/api"; /* HA-ADDON-ROUTER-BASENAME-PATCHED */|' \
-            -e 's|<BrowserRouter>|<BrowserRouter basename={BASE || "/"}>|' \
+            -e 's#<BrowserRouter>#<BrowserRouter basename={BASE || "/"}>#' \
             "$SRC_DIR/web/src/main.tsx"
         if ! grep -q 'basename={BASE || "/"}' "$SRC_DIR/web/src/main.tsx" 2>/dev/null; then
             echo "[run] WARNING: main.tsx BrowserRouter pattern changed upstream — dashboard links may 404 behind /dashboard/"
