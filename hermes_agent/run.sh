@@ -45,6 +45,8 @@ fi
 
 # Core paths (HOME=/config set in Dockerfile ENV)
 export HERMES_HOME="$HOME/${HERMES_HOME_DIR:-.hermes}"
+# HA's s6 supervises this wrapper; keep upstream Hermes in foreground mode.
+export HERMES_GATEWAY_NO_SUPERVISE=1
 echo "[run] HERMES_HOME: $HERMES_HOME"
 
 # ── Section 3: Persistent storage setup ──────────────────────────────
@@ -196,7 +198,7 @@ MARKER_FILE="$HOME/.hermes_install"
 compute_marker() {
     local ref="${GIT_REF:-$(cd "$SRC_DIR" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}"
     local hash="$(cd "$SRC_DIR" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo none)"
-    local subs="$(ls -d "$SRC_DIR"/*/pyproject.toml 2>/dev/null | xargs -I{} dirname {} | xargs -n1 basename | sort | paste -sd,)"
+    local subs="$(find "$SRC_DIR" -mindepth 2 -maxdepth 2 -name pyproject.toml -print 2>/dev/null | while IFS= read -r pyproject; do basename "$(dirname "$pyproject")"; done | sort | paste -sd,)"
     echo "${GIT_URL}|${ref}|${hash}|${subs}"
 }
 
@@ -441,6 +443,7 @@ fi
 # ~/.hermes_profile: regenerated every start with all env vars (for SSH/docker-exec sessions)
 cat > /config/.hermes_profile << ENVSH
 export HERMES_HOME="$HERMES_HOME"
+export HERMES_GATEWAY_NO_SUPERVISE=1
 export HERMES_VERSION="$HERMES_VERSION"
 $([ -n "$GIT_TOKEN" ] && echo "export GITHUB_TOKEN=\"$GIT_TOKEN\"")
 export GOBIN="$GO_DIR/bin"

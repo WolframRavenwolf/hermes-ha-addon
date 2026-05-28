@@ -121,6 +121,20 @@ class DashboardIngressPatchTests(unittest.TestCase):
         self.assertNotIn("BASE ||", run_sh)
         self.assertNotIn("HA-ADDON-ROUTER-BASENAME-PATCHED", run_sh)
 
+    def test_run_script_keeps_gateway_in_foreground_under_ha_s6(self) -> None:
+        """The add-on wrapper, not upstream Hermes' s6 manager, supervises the gateway."""
+        run_sh = RUN_SH.read_text()
+
+        self.assertGreaterEqual(run_sh.count("export HERMES_GATEWAY_NO_SUPERVISE=1"), 2)
+        self.assertIn("hermes gateway run 2>&1 | tee -a \"$HERMES_HOME/logs/gateway.log\" &", run_sh)
+
+    def test_install_marker_submodule_scan_tolerates_empty_matches(self) -> None:
+        """The marker calculation must not call basename with no operands."""
+        run_sh = RUN_SH.read_text()
+
+        self.assertIn("find \"$SRC_DIR\" -mindepth 2 -maxdepth 2 -name pyproject.toml", run_sh)
+        self.assertNotIn("xargs -n1 basename", run_sh)
+
     def test_modern_dashboard_adds_import_meta_fallback_and_relative_vite_base(self) -> None:
         """Modern Hermes still needs add-on-controlled paths behind long HA Ingress tokens."""
         with tempfile.TemporaryDirectory() as tmp:
