@@ -1,7 +1,7 @@
 #!/command/with-contenv bash
-# ─────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────[...]
 # Hermes Agent HA Add-on Entrypoint
-# ─────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────[...]
 set -euo pipefail
 
 # ── Section 1: Read options ──────────────────────────────────────────
@@ -584,7 +584,7 @@ start_gateway() {
     echo "[run] Starting Hermes gateway..."
     mkdir -p "$HERMES_HOME/logs"
     cd "$HERMES_HOME"
-    hermes gateway run 2>&1 | tee -a "$HERMES_HOME/logs/gateway.log" &
+    HERMES_GATEWAY_NO_SUPERVISE=1 hermes gateway run 2>&1 | tee -a "$HERMES_HOME/logs/gateway.log" &
     TEE_PID=$!
     sleep 0.5  # let gateway fork
     GATEWAY_PID=$(pgrep -f "hermes gateway run" | sort -n | tail -1 || echo "$TEE_PID")
