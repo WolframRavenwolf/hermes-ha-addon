@@ -262,6 +262,42 @@ class EnvMergeTests(unittest.TestCase):
         env_with, _ = _run_env_merge(options, 0, access_password="secret123")
         self.assertEqual(env_with.get("API_SERVER_KEY"), "secret123")
 
+    def test_env_value_with_sed_special_chars_survives_upsert(self):
+        """Values containing &, |, and backslash must round-trip through upsert_env_var.
+
+        Without escaping, `&` is expanded to the matched pattern (corrupting the
+        line) and `|` aborts sed because it's the substitution delimiter.
+        """
+        # Both append (no existing key) and replace (key already in .env) paths
+        # share the same escaping requirement.
+        cases = [
+            ("PIPE_KEY",   "value|with|pipes"),
+            ("AMP_KEY",    "a&b&c"),
+            ("BSLASH_KEY", r"raw\path\value"),
+            ("MIXED",      r"weird & | \ stuff"),
+        ]
+        # Append path: fresh .env, value first written via `>> env_file`.
+        for key, value in cases:
+            options = {
+                "profiles": [".hermes"],
+                "env_vars": [{"name": key, "value": value}],
+            }
+            env, _ = _run_env_merge(options, 0)
+            self.assertEqual(env.get(key), value, f"append: {key}")
+
+        # Replace path: pre-seed the .env so upsert_env_var hits the sed branch.
+        for key, value in cases:
+            options = {
+                "profiles": [".hermes"],
+                "env_vars": [{"name": key, "value": value}],
+            }
+            env, _ = _run_env_merge(
+                options,
+                0,
+                initial_env={0: f"{key}=placeholder\n"},
+            )
+            self.assertEqual(env.get(key), value, f"replace: {key}")
+
     def test_api_server_key_blanked_when_password_removed(self):
         options = {"profiles": [".hermes"]}
         # Simulate a previous run that wrote an API_SERVER_KEY value; now password is empty.

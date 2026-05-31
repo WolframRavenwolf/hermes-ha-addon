@@ -110,12 +110,16 @@ _sed_inplace() {
 }
 
 # Update or append KEY=VALUE in a dotenv-style file.
+# Values may contain sed-special characters (`&` `|` `\`); escape them before
+# substituting on the replacement side. The append path writes the raw value.
 upsert_env_var() {
   local env_file="$1" key="$2" value="$3"
+  local escaped_value
+  escaped_value="$(printf '%s' "$value" | sed 's/[\\&|]/\\&/g')"
   if grep -q "^${key}=" "$env_file"; then
-    _sed_inplace "$env_file" "s|^${key}=.*|${key}=${value}|"
+    _sed_inplace "$env_file" "s|^${key}=.*|${key}=${escaped_value}|"
   else
-    echo "${key}=${value}" >>"$env_file"
+    printf '%s=%s\n' "$key" "$value" >>"$env_file"
   fi
 }
 
