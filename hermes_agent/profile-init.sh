@@ -43,10 +43,9 @@ sanitize_profile_name() {
 }
 
 # Resolve a `profiles[]` entry into its on-disk relative directory.
-# Bare names (no `/`, no leading `.`) are placed under PROFILES_BASE so users
-# can write `finance-ana` instead of `.hermes/profiles/finance-ana`.
-# Entries containing `/` or starting with `.` are kept as-is so existing
-# layouts (e.g. `.hermes`, `team/finance`) continue to work.
+# Bare names (no leading `.`) are placed under PROFILES_BASE so users can write
+# `finance-ana` instead of `.hermes/profiles/finance-ana`. Entries starting
+# with `.` are kept as-is so the legacy `.hermes` path keeps working.
 _resolve_profile_dir() {
   local raw="$1" base="$2"
   if [ -z "$base" ]; then
@@ -54,7 +53,7 @@ _resolve_profile_dir() {
     return
   fi
   case "$raw" in
-    */* | .*) printf '%s' "$raw" ;;
+    .*) printf '%s' "$raw" ;;
     *) printf '%s/%s' "$base" "$raw" ;;
   esac
 }

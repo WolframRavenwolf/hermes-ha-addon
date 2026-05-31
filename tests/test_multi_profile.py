@@ -151,13 +151,13 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(rows[0]["home"], f"{home}/.hermes")
         self.assertEqual(rows[1]["home"], f"{home}/.hermes/profiles/manual")
 
-    def test_entry_with_slash_preserved_as_is(self):
-        """Entries containing `/` are taken verbatim (already a relative subpath)."""
+    def test_entry_with_slash_is_also_prefixed(self):
+        """Non-dotted entries always go under profiles_base, even if they contain `/`."""
         res = _run_resolve({"profiles": ["primary", "team/finance"]})
         home = res["home"]
         rows = res["rows"]
         self.assertEqual(rows[0]["home"], f"{home}/.hermes/profiles/primary")
-        self.assertEqual(rows[1]["home"], f"{home}/team/finance")
+        self.assertEqual(rows[1]["home"], f"{home}/.hermes/profiles/team/finance")
 
     def test_profiles_base_empty_disables_prefix(self):
         """Empty PROFILES_BASE preserves the pre-feature layout (`/config/<name>`)."""

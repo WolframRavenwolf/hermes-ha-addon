@@ -46,20 +46,19 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes .env variables — written to each profile's `.env` on each start          |
 | `hermes_home`         | `.hermes`                                          | Single-profile mode: agent profile directory (relative to ~). Ignored if `profiles` is non-empty |
 | `profiles`            | `[]`                                               | Multi-profile mode: list of profile directories run concurrently. First entry is the primary |
-| `profiles_base`       | `.hermes/profiles`                                 | Default parent dir for bare profile names. Entries containing `/` or starting with `.` are taken as-is. Set to empty to disable the prefix |
+| `profiles_base`       | `.hermes/profiles`                                 | Default parent dir for non-dotted profile names. Entries starting with `.` are taken as-is (legacy `.hermes` keeps working). Set to empty to disable the prefix |
 | `profile_env_vars`    | `[]`                                               | Per-profile `.env` overrides: each entry is `{profile, name, value}` where `profile` matches a directory in `profiles` |
 
 API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or each profile's `.env` directly (full list, via terminal or `hermes setup`). Non-empty top-level `env_vars` are written to every profile's `.env` on each start, overriding existing entries. `profile_env_vars` entries layer on top of the top-level set for the profile whose directory matches `profile`.
 
 ### Running multiple profiles concurrently
 
-Set `profiles` to run several Hermes instances in the same add-on. Bare names are placed under `profiles_base` (default `.hermes/profiles`) to match upstream's [profile layout](https://hermes-agent.nousresearch.com/docs/user-guide/profiles); entries containing `/` or starting with `.` are taken as-is. Per-profile env overrides live in a flat `profile_env_vars` list (Home Assistant Supervisor only allows nested objects two levels deep):
+Set `profiles` to run several Hermes instances in the same add-on. Non-dotted names are placed under `profiles_base` (default `.hermes/profiles`) to match upstream's [profile layout](https://hermes-agent.nousresearch.com/docs/user-guide/profiles); entries starting with `.` are taken as-is. Per-profile env overrides live in a flat `profile_env_vars` list (Home Assistant Supervisor only allows nested objects two levels deep):
 
 ```yaml
 profiles:
   - .hermes              # primary, lives at /config/.hermes
   - finance-ana          # /config/.hermes/profiles/finance-ana
-  - team/coder           # /config/team/coder (already has a slash)
 profile_env_vars:
   - profile: finance-ana
     name: OPENROUTER_API_KEY
