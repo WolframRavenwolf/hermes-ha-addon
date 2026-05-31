@@ -58,9 +58,17 @@ configuration:
     name: Profiles (multi-profile mode)
     description: >-
       List of profile directories (relative to /config) to run concurrently.
+      Bare names are placed under "profiles_base" (default .hermes/profiles).
+      Entries containing "/" or starting with "." are used as-is.
       The first entry is the primary and keeps the root routes (/hermes/,
       /dashboard/, /v1/, /terminal/). Each additional profile is served under
       /profile/<name>/...
+  profiles_base:
+    name: Profiles Base Directory
+    description: >-
+      Default parent directory for bare profile names (default ".hermes/profiles",
+      matching upstream Hermes' convention). Set to empty to disable the prefix
+      and keep all profile dirs directly under /config/.
   profile_env_vars:
     name: Per-profile .env Overrides
     description: >-

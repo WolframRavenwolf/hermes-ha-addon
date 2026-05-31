@@ -23,6 +23,8 @@ HASS_URL=$(opt hass_url)
 HASS_TOKEN=$(opt homeassistant_token)
 # shellcheck disable=SC2034  # consumed by resolve_profiles in profile-init.sh
 HERMES_HOME_DIR=$(opt hermes_home)
+# shellcheck disable=SC2034  # consumed by resolve_profiles in profile-init.sh
+PROFILES_BASE=$(opt profiles_base)
 ENABLE_DASHBOARD=$(opt_bool enable_dashboard)
 ENABLE_TERMINAL=$(opt_bool enable_terminal)
 ENABLE_API=$(opt_bool enable_api)
@@ -70,7 +72,6 @@ source "$PROFILE_INIT_LIB"
 resolve_profiles || exit 1
 
 PRIMARY_HOME="${PROFILE_HOMES[0]}"
-PRIMARY_VENV_DIR="${PROFILE_VENV_DIRS[0]}"
 export HERMES_HOME="$PRIMARY_HOME"
 
 echo "[run] Profiles (${#PROFILE_DIRS[@]}):"
@@ -218,38 +219,40 @@ PROFILE
     echo "[run] Created default .profile"
 fi
 
-# ── Section 5: Hermes installation (per profile) ─────────────────────
+# ── Section 5: Hermes installation (single shared install) ───────────
+# Upstream Hermes itself supports multiple profiles via per-profile HERMES_HOME
+# directories (see https://hermes-agent.nousresearch.com/docs/user-guide/profiles).
+# We therefore install one shared clone + venv and point each profile's
+# HERMES_HOME at its own data directory at gateway start time.
+SRC_DIR="$HOME/.hermes/hermes-agent"
+VENV_DIR="$SRC_DIR/venv"
+MARKER_FILE="$HOME/.hermes_install"
+
 compute_marker() {
-    local src_dir="$1"
-    local ref="${GIT_REF:-$(cd "$src_dir" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}"
+    local ref="${GIT_REF:-$(cd "$SRC_DIR" 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}"
     local hash
-    hash="$(cd "$src_dir" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo none)"
+    hash="$(cd "$SRC_DIR" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo none)"
     local subs
-    subs="$(find "$src_dir" -mindepth 2 -maxdepth 2 -name pyproject.toml -print 2>/dev/null | while IFS= read -r pyproject; do basename "$(dirname "$pyproject")"; done | sort | paste -sd,)"
+    subs="$(find "$SRC_DIR" -mindepth 2 -maxdepth 2 -name pyproject.toml -print 2>/dev/null | while IFS= read -r pyproject; do basename "$(dirname "$pyproject")"; done | sort | paste -sd,)"
     echo "${GIT_URL}|${ref}|${hash}|${subs}"
 }
 
 install_needed() {
-    local src_dir="$1" venv_dir="$2" marker_file="$3"
     local current
-    current=$(compute_marker "$src_dir")
-    if [ ! -f "$marker_file" ]; then return 0; fi
-    if [ "$(cat "$marker_file")" != "$current" ]; then return 0; fi
-    if [ ! -f "$venv_dir/bin/activate" ]; then return 0; fi
-    if [ ! -f "$venv_dir/bin/hermes" ]; then return 0; fi
+    current=$(compute_marker)
+    if [ ! -f "$MARKER_FILE" ]; then return 0; fi
+    if [ "$(cat "$MARKER_FILE")" != "$current" ]; then return 0; fi
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then return 0; fi
+    if [ ! -f "$VENV_DIR/bin/hermes" ]; then return 0; fi
     return 1
 }
 
-install_profile() {
-    local i="$1"
-    local src_dir="${PROFILE_SRC_DIRS[$i]}"
-    local venv_dir="${PROFILE_VENV_DIRS[$i]}"
-    local marker_file="${PROFILE_MARKER[$i]}"
-    local name="${PROFILE_NAMES[$i]}"
+install_hermes_core() {
+    mkdir -p "$(dirname "$SRC_DIR")"
 
     # Clone if missing
-    if [ ! -d "$src_dir/.git" ]; then
-        echo "[run] [$name] Cloning Hermes Agent..."
+    if [ ! -d "$SRC_DIR/.git" ]; then
+        echo "[run] Cloning Hermes Agent..."
         local clone_url="$GIT_URL"
         if [ -n "$GIT_TOKEN" ]; then
             clone_url=$(echo "$GIT_URL" | sed "s|https://|https://${GIT_TOKEN}@|")
@@ -258,95 +261,93 @@ install_profile() {
         if [ -n "$GIT_REF" ]; then
             clone_args+=(--branch "$GIT_REF")
         fi
-        git clone "${clone_args[@]}" "$clone_url" "$src_dir"
-        (cd "$src_dir" && git submodule update --init --recursive 2>/dev/null || true)
-        echo "[run] [$name] Clone complete: $(cd "$src_dir" && git log --oneline -1)"
+        git clone "${clone_args[@]}" "$clone_url" "$SRC_DIR"
+        (cd "$SRC_DIR" && git submodule update --init --recursive 2>/dev/null || true)
+        echo "[run] Clone complete: $(cd "$SRC_DIR" && git log --oneline -1)"
     fi
 
     # Auto-update (stash local changes, pull, restore)
-    if [ "$AUTO_UPDATE" = "true" ] && [ -d "$src_dir/.git" ]; then
-        echo "[run] [$name] Pulling latest changes..."
+    if [ "$AUTO_UPDATE" = "true" ] && [ -d "$SRC_DIR/.git" ]; then
+        echo "[run] Pulling latest changes..."
         (
-            cd "$src_dir"
+            cd "$SRC_DIR"
             git stash --quiet 2>/dev/null || true
-            git pull --ff-only 2>/dev/null || echo "[run] [$name] Warning: git pull failed (branch may have diverged)"
+            git pull --ff-only 2>/dev/null || echo "[run] Warning: git pull failed (branch may have diverged)"
             git stash pop --quiet 2>/dev/null || true
             git submodule update --init --recursive 2>/dev/null || true
         )
     fi
 
     # Editable install
-    if [ ! -f "$venv_dir/bin/activate" ]; then
-        echo "[run] [$name] Creating venv..."
-        uv venv "$venv_dir" --python 3.11
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        echo "[run] Creating venv..."
+        uv venv "$VENV_DIR" --python 3.11
     fi
-    if install_needed "$src_dir" "$venv_dir" "$marker_file"; then
-        echo "[run] [$name] Installing Hermes (editable)..."
+    if install_needed; then
+        echo "[run] Installing Hermes (editable)..."
         (
-            cd "$src_dir"
+            cd "$SRC_DIR"
             # shellcheck disable=SC1091
-            source "$venv_dir/bin/activate"
+            source "$VENV_DIR/bin/activate"
             uv pip install -e ".[all,dev]" 2>&1 | tail -5
-            if [ -f "$src_dir/mini-swe-agent/pyproject.toml" ]; then
-                uv pip install -e "$src_dir/mini-swe-agent" 2>&1 | tail -3
+            if [ -f "$SRC_DIR/mini-swe-agent/pyproject.toml" ]; then
+                uv pip install -e "$SRC_DIR/mini-swe-agent" 2>&1 | tail -3
             fi
-            if [ -f "$src_dir/tinker-atropos/pyproject.toml" ]; then
-                uv pip install -e "$src_dir/tinker-atropos" 2>&1 | tail -3
+            if [ -f "$SRC_DIR/tinker-atropos/pyproject.toml" ]; then
+                uv pip install -e "$SRC_DIR/tinker-atropos" 2>&1 | tail -3
             fi
         )
-        compute_marker "$src_dir" > "$marker_file"
-        echo "[run] [$name] Install complete"
+        compute_marker > "$MARKER_FILE"
+        echo "[run] Install complete"
     else
-        echo "[run] [$name] Install up to date (marker match)"
+        echo "[run] Install up to date (marker match)"
     fi
 
     # Link image-installed npm packages into project node_modules
-    if [ ! -e "$src_dir/node_modules/agent-browser" ]; then
-        mkdir -p "$src_dir/node_modules"
-        ln -snf /usr/lib/node_modules/agent-browser "$src_dir/node_modules/agent-browser"
-        (cd "$src_dir" && npm audit fix --silent 2>/dev/null || true)
-        echo "[run] [$name] Linked agent-browser into project"
+    if [ ! -e "$SRC_DIR/node_modules/agent-browser" ]; then
+        mkdir -p "$SRC_DIR/node_modules"
+        ln -snf /usr/lib/node_modules/agent-browser "$SRC_DIR/node_modules/agent-browser"
+        (cd "$SRC_DIR" && npm audit fix --silent 2>/dev/null || true)
+        echo "[run] Linked agent-browser into project"
     fi
 
-    # Build dashboard web frontend
-    if [ -f "$src_dir/web/package.json" ]; then
+    # Build dashboard web frontend (single build, shared by every profile)
+    if [ -f "$SRC_DIR/web/package.json" ]; then
         local rebuild="false"
         local status_file
         status_file="$(mktemp)"
 
-        if ! python /usr/local/bin/hermes-dashboard-patches "$src_dir" "$status_file"; then
-            echo "[run] [$name] WARNING: dashboard compatibility patch failed - continuing startup"
+        if ! python /usr/local/bin/hermes-dashboard-patches "$SRC_DIR" "$status_file"; then
+            echo "[run] WARNING: dashboard compatibility patch failed - continuing startup"
         fi
         if [ -s "$status_file" ]; then
             rebuild="true"
         fi
         rm -f "$status_file"
 
-        if grep -Eq '(src|href)="/assets/' "$src_dir/hermes_cli/web_dist/index.html" 2>/dev/null; then
+        if grep -Eq '(src|href)="/assets/' "$SRC_DIR/hermes_cli/web_dist/index.html" 2>/dev/null; then
             rebuild="true"
         fi
 
-        if [ "$rebuild" = "true" ] || [ ! -d "$src_dir/hermes_cli/web_dist/assets" ]; then
-            echo "[run] [$name] Building dashboard frontend..."
-            if (cd "$src_dir/web" && npm install --silent 2>&1 | tail -3 && npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir 2>&1 | tail -3); then
-                echo "[run] [$name] Dashboard frontend built"
+        if [ "$rebuild" = "true" ] || [ ! -d "$SRC_DIR/hermes_cli/web_dist/assets" ]; then
+            echo "[run] Building dashboard frontend..."
+            if (cd "$SRC_DIR/web" && npm install --silent 2>&1 | tail -3 && npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir 2>&1 | tail -3); then
+                echo "[run] Dashboard frontend built"
             else
-                echo "[run] [$name] Warning: dashboard frontend build failed (dashboard will not be available)"
+                echo "[run] Warning: dashboard frontend build failed (dashboard will not be available)"
             fi
         fi
     fi
 }
 
-for i in "${!PROFILE_DIRS[@]}"; do
-    install_profile "$i"
-done
+install_hermes_core
 
-# Activate the primary profile's venv for any tooling (e.g. dashboard module probe).
+# Activate the shared venv for any tooling (e.g. dashboard module probe).
 # shellcheck disable=SC1091
-source "$PRIMARY_VENV_DIR/bin/activate"
+source "$VENV_DIR/bin/activate"
 
-# Verify version (from primary)
-HERMES_VERSION="$("$PRIMARY_VENV_DIR/bin/hermes" --version 2>/dev/null | head -1 || echo "unknown")"
+# Verify version
+HERMES_VERSION="$("$VENV_DIR/bin/hermes" --version 2>/dev/null | head -1 || echo "unknown")"
 export HERMES_VERSION
 echo "[run] Hermes version: $HERMES_VERSION"
 
@@ -354,16 +355,15 @@ echo "[run] Hermes version: $HERMES_VERSION"
 scaffold_profile_files() {
     local i="$1"
     local home="${PROFILE_HOMES[$i]}"
-    local src_dir="${PROFILE_SRC_DIRS[$i]}"
     local name="${PROFILE_NAMES[$i]}"
 
-    if [ ! -f "$home/.env" ] && [ -f "$src_dir/.env.example" ]; then
-        cp -p "$src_dir/.env.example" "$home/.env"
+    if [ ! -f "$home/.env" ] && [ -f "$SRC_DIR/.env.example" ]; then
+        cp -p "$SRC_DIR/.env.example" "$home/.env"
         chmod 600 "$home/.env"
         echo "[run] [$name] Created .env from source example (chmod 600)"
     fi
-    if [ ! -f "$home/config.yaml" ] && [ -f "$src_dir/cli-config.yaml.example" ]; then
-        cp -p "$src_dir/cli-config.yaml.example" "$home/config.yaml"
+    if [ ! -f "$home/config.yaml" ] && [ -f "$SRC_DIR/cli-config.yaml.example" ]; then
+        cp -p "$SRC_DIR/cli-config.yaml.example" "$home/config.yaml"
         echo "[run] [$name] Created config.yaml from source example"
     fi
     if [ ! -f "$home/SOUL.md" ]; then
@@ -447,7 +447,7 @@ export HOMEBREW_CELLAR="$BREW_DIR/Cellar"
 export HOMEBREW_PREFIX="$BREW_DIR"
 export HOMEBREW_REPOSITORY="$BREW_DIR/Homebrew"
 export NPM_CONFIG_PREFIX="$NODE_DIR"
-export PATH="\${HERMES_HOME}/hermes-agent/venv/bin:$BREW_DIR/sbin:$BREW_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_DIR/bin:\$PATH"
+export PATH="$VENV_DIR/bin:$BREW_DIR/sbin:$BREW_DIR/bin:$GO_DIR/bin:/usr/local/go/bin:$NODE_DIR/bin:\$PATH"
 ENVSH
 
 # ── Section 8: TLS certificates (shared) ─────────────────────────────
@@ -474,7 +474,7 @@ fi
 
 # ── Section 9: Render nginx config ───────────────────────────────────
 DASHBOARD_AVAILABLE="false"
-if "$PRIMARY_VENV_DIR/bin/python" -c "from hermes_cli.web_server import start_server" 2>/dev/null; then
+if "$VENV_DIR/bin/python" -c "from hermes_cli.web_server import start_server" 2>/dev/null; then
     DASHBOARD_AVAILABLE="true"
 fi
 
@@ -601,7 +601,6 @@ DASHBOARD_PIDS=()
 start_gateway_for_profile() {
     local i="$1"
     local home="${PROFILE_HOMES[$i]}"
-    local venv="${PROFILE_VENV_DIRS[$i]}"
     local name="${PROFILE_NAMES[$i]}"
     local port="${API_PORTS[$i]}"
 
@@ -610,8 +609,8 @@ start_gateway_for_profile() {
     (
         cd "$home"
         export HERMES_HOME="$home"
-        export PATH="$venv/bin:$BASE_PATH"
-        "$venv/bin/hermes" gateway run 2>&1 | tee -a "$home/logs/gateway.log"
+        export PATH="$VENV_DIR/bin:$BASE_PATH"
+        "$VENV_DIR/bin/hermes" gateway run 2>&1 | tee -a "$home/logs/gateway.log"
     ) &
     local tee_pid=$!
     sleep 0.5
@@ -680,7 +679,6 @@ start_ttyd_for_profile() {
 start_dashboard_for_profile() {
     local i="$1"
     local home="${PROFILE_HOMES[$i]}"
-    local venv="${PROFILE_VENV_DIRS[$i]}"
     local name="${PROFILE_NAMES[$i]}"
     local port="${DASHBOARD_PORTS[$i]}"
 
@@ -692,7 +690,7 @@ start_dashboard_for_profile() {
     (
         cd "$home"
         export HERMES_HOME="$home"
-        exec "$venv/bin/python" -c "from hermes_cli.web_server import start_server; start_server(host='127.0.0.1', port=${port}, open_browser=False)"
+        exec "$VENV_DIR/bin/python" -c "from hermes_cli.web_server import start_server; start_server(host='127.0.0.1', port=${port}, open_browser=False)"
     ) &
     DASHBOARD_PIDS[$i]=$!
     echo "[run] [$name] Dashboard PID: ${DASHBOARD_PIDS[$i]}"

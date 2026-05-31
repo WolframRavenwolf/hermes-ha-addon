@@ -237,13 +237,13 @@ class DashboardIngressPatchTests(unittest.TestCase):
         # The gateway is started inside a subshell whose stdout pipes through tee
         # to a per-profile log file. The pipe lives inside `(...)` and the whole
         # group is backgrounded with `&`.
-        self.assertIn('"$venv/bin/hermes" gateway run 2>&1 | tee -a "$home/logs/gateway.log"', run_sh)
+        self.assertIn('"$VENV_DIR/bin/hermes" gateway run 2>&1 | tee -a "$home/logs/gateway.log"', run_sh)
 
     def test_install_marker_submodule_scan_tolerates_empty_matches(self) -> None:
         """The marker calculation must not call basename with no operands."""
         run_sh = RUN_SH.read_text()
 
-        self.assertIn('find "$src_dir" -mindepth 2 -maxdepth 2 -name pyproject.toml', run_sh)
+        self.assertIn('find "$SRC_DIR" -mindepth 2 -maxdepth 2 -name pyproject.toml', run_sh)
         self.assertNotIn("xargs -n1 basename", run_sh)
 
     def test_modern_dashboard_adds_import_meta_fallback_and_relative_vite_base(self) -> None:

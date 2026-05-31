@@ -27,8 +27,12 @@ BASH = "/bin/bash" if sys.platform == "darwin" and os.path.exists("/bin/bash") e
 
 # ── A. resolve_profiles ──────────────────────────────────────────────
 
-def _run_resolve(options_json, *, legacy_hermes_home="", home_base=None):
-    """Run resolve_profiles, return either {'rows': [...]} or {'error': '...'}."""
+def _run_resolve(options_json, *, legacy_hermes_home="", home_base=None, profiles_base=None):
+    """Run resolve_profiles, return either {'rows': [...]} or {'error': '...'}.
+
+    profiles_base: None → inherit profile-init default (`.hermes/profiles`).
+                   string → exported as PROFILES_BASE (empty string disables prefix).
+    """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         if home_base is None:
@@ -36,17 +40,23 @@ def _run_resolve(options_json, *, legacy_hermes_home="", home_base=None):
             home_base.mkdir()
         options_path = tmp_path / "options.json"
         options_path.write_text(json.dumps(options_json))
+        export_profiles_base = (
+            f"export PROFILES_BASE={shlex.quote(profiles_base)}"
+            if profiles_base is not None
+            else ""
+        )
         script = textwrap.dedent(f"""
             set -euo pipefail
             export HOME={shlex.quote(str(home_base))}
             export OPTIONS_FILE={shlex.quote(str(options_path))}
             export HERMES_HOME_DIR={shlex.quote(legacy_hermes_home)}
+            {export_profiles_base}
             source {shlex.quote(str(PROFILE_INIT_LIB))}
             resolve_profiles
             for i in "${{!PROFILE_DIRS[@]}}"; do
-                printf 'idx=%d|dir=%s|name=%s|home=%s|src=%s|venv=%s|prefix=%s|marker=%s|api=%d|th=%d|tt=%d|dash=%d\\n' \\
+                printf 'idx=%d|dir=%s|name=%s|home=%s|prefix=%s|marker=%s|api=%d|th=%d|tt=%d|dash=%d\\n' \\
                     "$i" "${{PROFILE_DIRS[$i]}}" "${{PROFILE_NAMES[$i]}}" \\
-                    "${{PROFILE_HOMES[$i]}}" "${{PROFILE_SRC_DIRS[$i]}}" "${{PROFILE_VENV_DIRS[$i]}}" \\
+                    "${{PROFILE_HOMES[$i]}}" \\
                     "${{PROFILE_PATH_PREFIX[$i]}}" "${{PROFILE_MARKER[$i]}}" \\
                     "${{API_PORTS[$i]}}" "${{TTYD_HERMES_PORTS[$i]}}" \\
                     "${{TTYD_TERMINAL_PORTS[$i]}}" "${{DASHBOARD_PORTS[$i]}}"
@@ -124,6 +134,53 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(rows[1]["name"], "my_profile_v2")
         self.assertEqual(rows[1]["prefix"], "/profile/my_profile_v2")
 
+    def test_bare_name_resolves_under_default_profiles_base(self):
+        """Bare names without `/` or leading `.` go under PROFILES_BASE (default `.hermes/profiles`)."""
+        res = _run_resolve({"profiles": ["finance-ana"]})
+        home = res["home"]
+        row = res["rows"][0]
+        self.assertEqual(row["dir"], "finance-ana")
+        self.assertEqual(row["name"], "finance_ana")
+        self.assertEqual(row["home"], f"{home}/.hermes/profiles/finance-ana")
+
+    def test_dotted_entry_preserved_as_is(self):
+        """Entries starting with `.` are not re-prefixed (`.hermes` must stay flat)."""
+        res = _run_resolve({"profiles": [".hermes", ".hermes/profiles/manual"]})
+        home = res["home"]
+        rows = res["rows"]
+        self.assertEqual(rows[0]["home"], f"{home}/.hermes")
+        self.assertEqual(rows[1]["home"], f"{home}/.hermes/profiles/manual")
+
+    def test_entry_with_slash_preserved_as_is(self):
+        """Entries containing `/` are taken verbatim (already a relative subpath)."""
+        res = _run_resolve({"profiles": ["primary", "team/finance"]})
+        home = res["home"]
+        rows = res["rows"]
+        self.assertEqual(rows[0]["home"], f"{home}/.hermes/profiles/primary")
+        self.assertEqual(rows[1]["home"], f"{home}/team/finance")
+
+    def test_profiles_base_empty_disables_prefix(self):
+        """Empty PROFILES_BASE preserves the pre-feature layout (`/config/<name>`)."""
+        res = _run_resolve({"profiles": ["amy"]}, profiles_base="")
+        home = res["home"]
+        self.assertEqual(res["rows"][0]["home"], f"{home}/amy")
+
+    def test_profiles_base_custom_value(self):
+        res = _run_resolve(
+            {"profiles": ["alpha", "beta"]},
+            profiles_base="agents",
+        )
+        home = res["home"]
+        rows = res["rows"]
+        self.assertEqual(rows[0]["home"], f"{home}/agents/alpha")
+        self.assertEqual(rows[1]["home"], f"{home}/agents/beta")
+
+    def test_legacy_hermes_home_ignores_profiles_base(self):
+        """Single-profile fallback must keep its pre-feature layout."""
+        res = _run_resolve({}, legacy_hermes_home="amy", profiles_base=".hermes/profiles")
+        home = res["home"]
+        self.assertEqual(res["rows"][0]["home"], f"{home}/amy")
+
     def test_marker_and_home_paths_are_per_profile(self):
         res = _run_resolve(
             {"profiles": [".hermes", "amy"]}
@@ -131,7 +188,8 @@ class ProfileResolutionTests(unittest.TestCase):
         home = res["home"]
         rows = res["rows"]
         self.assertEqual(rows[0]["home"], f"{home}/.hermes")
-        self.assertEqual(rows[0]["src"], f"{home}/.hermes/hermes-agent")
+        # `amy` is bare → goes under default profiles_base.
+        self.assertEqual(rows[1]["home"], f"{home}/.hermes/profiles/amy")
         self.assertEqual(rows[0]["marker"], f"{home}/.hermes_install_hermes")
         self.assertEqual(rows[1]["marker"], f"{home}/.hermes_install_amy")
 
@@ -166,6 +224,7 @@ def _run_env_merge(
             export HOME={shlex.quote(str(home))}
             export OPTIONS_FILE={shlex.quote(str(options_path))}
             export HERMES_HOME_DIR=""
+            export PROFILES_BASE=""
             export ENABLE_API={shlex.quote(enable_api)}
             export ACCESS_PASSWORD={shlex.quote(access_password)}
             source {shlex.quote(str(PROFILE_INIT_LIB))}

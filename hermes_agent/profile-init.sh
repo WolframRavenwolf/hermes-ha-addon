@@ -7,14 +7,13 @@
 # Reads from caller env:
 #   OPTIONS_FILE          path to HA add-on options.json
 #   HERMES_HOME_DIR       legacy single-profile fallback (string, may be empty)
-#   HOME                  user home (per-profile homes are $HOME/<dir>)
+#   PROFILES_BASE         default-base for bare profile names (default ".hermes/profiles")
+#   HOME                  user home (per-profile homes are $HOME/<effective_dir>)
 #
 # Populates arrays in the caller's scope:
 #   PROFILE_DIRS[]        raw "home" string per profile
 #   PROFILE_NAMES[]       sanitized identifier per profile (alnum + _)
 #   PROFILE_HOMES[]       $HOME/<dir>
-#   PROFILE_SRC_DIRS[]    <home>/hermes-agent
-#   PROFILE_VENV_DIRS[]   <src_dir>/venv
 #   PROFILE_PATH_PREFIX[] "" for primary, "/profile/<name>" otherwise
 #   PROFILE_MARKER[]      install-marker file per profile
 #   API_PORTS[]           per-profile gateway API server port
@@ -43,28 +42,50 @@ sanitize_profile_name() {
   printf '%s' "$name"
 }
 
+# Resolve a `profiles[]` entry into its on-disk relative directory.
+# Bare names (no `/`, no leading `.`) are placed under PROFILES_BASE so users
+# can write `finance-ana` instead of `.hermes/profiles/finance-ana`.
+# Entries containing `/` or starting with `.` are kept as-is so existing
+# layouts (e.g. `.hermes`, `team/finance`) continue to work.
+_resolve_profile_dir() {
+  local raw="$1" base="$2"
+  if [ -z "$base" ]; then
+    printf '%s' "$raw"
+    return
+  fi
+  case "$raw" in
+    */* | .*) printf '%s' "$raw" ;;
+    *) printf '%s/%s' "$base" "$raw" ;;
+  esac
+}
+
 # Read the profiles list (or legacy hermes_home) and populate all PROFILE_* + port arrays.
 resolve_profiles() {
   PROFILE_DIRS=()
-
   local _line
+  local profiles_from_list=true
   while IFS= read -r _line; do
     [ -n "$_line" ] && PROFILE_DIRS+=("$_line")
   done < <(jq -r '.profiles[]? // empty' "$OPTIONS_FILE")
   if [ "${#PROFILE_DIRS[@]}" -eq 0 ]; then
     PROFILE_DIRS=("${HERMES_HOME_DIR:-.hermes}")
+    profiles_from_list=false
   fi
 
   PROFILE_NAMES=()
   PROFILE_HOMES=()
-  PROFILE_SRC_DIRS=()
-  PROFILE_VENV_DIRS=()
   PROFILE_PATH_PREFIX=()
   PROFILE_MARKER=()
 
-  local i j dir name
+  local i j dir effective_dir name
+  local base="${PROFILES_BASE-.hermes/profiles}"
   for i in "${!PROFILE_DIRS[@]}"; do
     dir="${PROFILE_DIRS[$i]}"
+    if [ "$profiles_from_list" = "true" ]; then
+      effective_dir="$(_resolve_profile_dir "$dir" "$base")"
+    else
+      effective_dir="$dir"
+    fi
     name="$(sanitize_profile_name "$dir")"
     if [ -z "$name" ]; then
       echo "[profile-init] FATAL: profile dir '$dir' yields empty name after sanitization" >&2
@@ -77,9 +98,7 @@ resolve_profiles() {
       fi
     done
     PROFILE_NAMES[i]="$name"
-    PROFILE_HOMES[i]="$HOME/$dir"
-    PROFILE_SRC_DIRS[i]="${PROFILE_HOMES[$i]}/hermes-agent"
-    PROFILE_VENV_DIRS[i]="${PROFILE_SRC_DIRS[$i]}/venv"
+    PROFILE_HOMES[i]="$HOME/$effective_dir"
     if [ "$i" -eq 0 ]; then
       PROFILE_PATH_PREFIX[i]=""
     else
