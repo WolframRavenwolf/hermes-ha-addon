@@ -372,6 +372,42 @@ class DashboardIngressPatchTests(unittest.TestCase):
             self.assertIn('basename={BASE || "/"}', (src / "web/src/main.tsx").read_text())
             self.assertIn('base: "./"', (src / "web/vite.config.ts").read_text())
 
+    def test_prefix_length_limit_raised_for_ha_ingress(self) -> None:
+        """Upstream's normalise_prefix rejects > 64-char prefixes, which kills
+        nested addon routes (HA Ingress token + /profile/<name>/dashboard).
+        Patch must bump the limit."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp)
+            write_modern_dashboard_fixture(src)
+            prefix_py = src / "hermes_cli/dashboard_auth/prefix.py"
+            prefix_py.parent.mkdir(parents=True)
+            prefix_py.write_text(
+                "def normalise_prefix(raw):\n"
+                '    p = "/" + (raw or "").strip("/")\n'
+                '    if len(p) > 64:\n'
+                '        return ""\n'
+                "    return p\n"
+            )
+            status = src / "status"
+
+            result = run_dashboard_patches(src, status)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(status.read_text(), "changed")
+            patched = prefix_py.read_text()
+            self.assertIn("HA-ADDON-PREFIX-LIMIT-PATCHED", patched)
+            self.assertNotIn("if len(p) > 64:", patched)
+            # New limit must accommodate HA Ingress token (~50) +
+            # `/profile/<name>/dashboard` (up to ~50) comfortably.
+            self.assertIn("> 256:", patched)
+
+            # Idempotent on second run.
+            second_status = src / "status2"
+            second_result = run_dashboard_patches(src, second_status)
+            self.assertEqual(second_result.returncode, 0, second_result.stderr)
+            # Re-running with no other changes leaves status empty.
+            self.assertEqual(second_status.read_text(), "")
+
     def test_run_script_rebuilds_any_dashboard_with_absolute_index_assets(self) -> None:
         """Absolute Vite index assets are stale for HA Ingress, modern or legacy."""
         run_sh = RUN_SH.read_text()

@@ -656,13 +656,17 @@ start_ttyd_for_profile() {
     local term_port="${TTYD_TERMINAL_PORTS[$i]}"
 
     echo "[run] [$name] Starting ttyd (hermes: $hermes_port, terminal: $term_port)..."
+    # tmux server env is captured on first new-session and shared by every
+    # later session on the same socket. With one shared socket, profile-N's
+    # session would inherit profile-0's HERMES_HOME. Use a per-profile
+    # socket (`-L`) so each tmux server inherits the right env.
     env HERMES_HOME="$home" \
         ttyd \
             --port "$hermes_port" \
             --interface 127.0.0.1 \
             --base-path "${prefix}/hermes/" \
             --writable -d 3 \
-            tmux -u new -A -s "hermes-${name}" /usr/local/bin/start-hermes &
+            tmux -L "hermes-${name}" -u new -A -s "hermes-${name}" /usr/local/bin/start-hermes &
     TTYD_HERMES_PIDS[$i]=$!
 
     env HERMES_HOME="$home" \
@@ -671,7 +675,7 @@ start_ttyd_for_profile() {
             --interface 127.0.0.1 \
             --base-path "${prefix}/terminal/" \
             --writable -d 3 \
-            tmux -u new -A -s "terminal-${name}" /usr/bin/bash &
+            tmux -L "terminal-${name}" -u new -A -s "terminal-${name}" /usr/bin/bash &
     TTYD_TERMINAL_PIDS[$i]=$!
     echo "[run] [$name] ttyd PIDs: hermes=${TTYD_HERMES_PIDS[$i]} terminal=${TTYD_TERMINAL_PIDS[$i]}"
 }

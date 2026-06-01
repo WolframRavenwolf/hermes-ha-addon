@@ -39,6 +39,12 @@ MODERN_BASE_FALLBACK_PATCH = (
     'export const HERMES_BASE_PATH = readBasePath() || HERMES_IMPORT_META_BASE_PATH;'
 )
 VITE_BASE_MARKER = "HA-ADDON-BASE-INJECTED"
+PREFIX_LIMIT_MARKER = "HA-ADDON-PREFIX-LIMIT-PATCHED"
+# HA Ingress prepends `/api/hassio_ingress/<32-char-token>` (~50 chars). Add a
+# nested addon path like `/profile/<name>/dashboard` and the total easily
+# exceeds upstream's default 64-char ceiling, causing the SPA serve handler to
+# skip the asset URL rewrite and the browser to 404 on `/assets/...`.
+PREFIX_LIMIT_RAISED = 256
 
 
 def read(path: Path) -> str:
@@ -185,6 +191,35 @@ def ensure_vite_relative_base(vite: Path, vite_text: str) -> bool:
     return False
 
 
+def patch_prefix_length_limit(prefix_py: Path, text: str) -> bool:
+    """Raise upstream's X-Forwarded-Prefix length ceiling for HA Ingress.
+
+    Upstream rejects prefixes longer than 64 characters as a header-injection
+    guard. HA Ingress' own token segment already eats most of that budget,
+    leaving no room for nested addon routes (`/profile/<name>/dashboard`).
+    """
+    if not prefix_py.is_file():
+        return False
+    if PREFIX_LIMIT_MARKER in text:
+        return False
+    patched, count = re.subn(
+        r"if len\(p\) > 64:",
+        f"if len(p) > {PREFIX_LIMIT_RAISED}:  # {PREFIX_LIMIT_MARKER}",
+        text,
+        count=1,
+    )
+    if not count:
+        print(
+            "[run] WARNING: prefix.py length check pattern changed upstream - "
+            "nested addon routes (/profile/...) may 404 on dashboard assets"
+        )
+        return False
+    if write_if_changed(prefix_py, text, patched):
+        print("[run] Patched dashboard prefix length limit for HA Ingress")
+        return True
+    return False
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print("usage: dashboard-patches.py SRC_DIR STATUS_FILE", file=sys.stderr)
@@ -196,6 +231,7 @@ def main() -> int:
     plugins = src / "web/src/plugins/usePlugins.ts"
     main_tsx = src / "web/src/main.tsx"
     vite = src / "web/vite.config.ts"
+    prefix_py = src / "hermes_cli/dashboard_auth/prefix.py"
 
     changed = False
     api_text = read(api)
@@ -208,6 +244,7 @@ def main() -> int:
         changed |= patch_legacy_plugins(plugins, read(plugins))
         changed |= patch_legacy_router(main_tsx, read(main_tsx))
     changed |= ensure_vite_relative_base(vite, read(vite))
+    changed |= patch_prefix_length_limit(prefix_py, read(prefix_py))
 
     status_file.write_text("changed" if changed else "")
     return 0
