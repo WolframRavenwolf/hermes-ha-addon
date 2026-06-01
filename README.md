@@ -133,10 +133,11 @@ Via Home Assistant host + docker exec, no SSH server in container required. Port
 ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) bash"
 
 # Hermes (shared tmux session — same as Home Assistant sidebar "Hermes" tab)
-ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -u new -A -s hermes /usr/local/bin/start-hermes"
+# Replace <profile> with the sanitized profile name (e.g. "hermes" for the primary `.hermes`, "amy" for `amy`).
+ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -L hermes-<profile> -u new -A -s hermes-<profile> /usr/local/bin/start-hermes"
 
 # Terminal (shared tmux session — same as Home Assistant sidebar "Terminal" tab)
-ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -u new -A -s terminal bash"
+ssh -p 22222 -t root@homeassistant.local "docker exec -it \$(docker ps -qf name=hermes_agent) tmux -L terminal-<profile> -u new -A -s terminal-<profile> bash"
 
 # Copy files (e.g. upload a custom SOUL.md — works even when add-on is stopped)
 scp -P 22222 SOUL.md "root@homeassistant.local:/mnt/data/supervisor/addon_configs/*hermes_agent/.hermes/"
