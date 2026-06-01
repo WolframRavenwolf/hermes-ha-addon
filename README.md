@@ -57,15 +57,17 @@ Set `profiles` to run several Hermes instances in the same add-on. Non-dotted na
 
 ```yaml
 profiles:
-  - .hermes              # primary, lives at /config/.hermes
-  - finance-ana          # /config/.hermes/profiles/finance-ana
+  - .hermes              # primary, kept as-is (leading "."): /config/.hermes
+  - amy                  # bare name, prefixed by profiles_base: /config/.hermes/profiles/amy
+  - bob                  # same: /config/.hermes/profiles/bob
 profile_env_vars:
-  - profile: finance-ana
+  # `profile` matches the entry above exactly (use the string you put in `profiles`).
+  - profile: amy
     name: OPENROUTER_API_KEY
-    value: finance-only-key
-  - profile: finance-ana
-    name: SOME_VAR
-    value: special
+    value: amy-only-key
+  - profile: amy
+    name: SOME_AMY_VAR
+    value: amy-special
 ```
 
 A single shared install at `~/.hermes/hermes-agent` (clone + venv) backs every profile — only the per-profile `.env`, `config.yaml`, `SOUL.md`, sessions, memories, and logs live under each profile's directory.
