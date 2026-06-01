@@ -226,6 +226,8 @@ class DashboardIngressPatchTests(unittest.TestCase):
         run_sh = RUN_SH.read_text()
 
         self.assertIn("hermes-dashboard-patches", run_sh)
+        self.assertIn('/usr/local/bin/hermes-dashboard-patches "$src_dir" "$status_file"', run_sh)
+        self.assertNotIn("python /usr/local/bin/hermes-dashboard-patches", run_sh)
         self.assertNotIn("BASE ||", run_sh)
         self.assertNotIn("HA-ADDON-ROUTER-BASENAME-PATCHED", run_sh)
 
