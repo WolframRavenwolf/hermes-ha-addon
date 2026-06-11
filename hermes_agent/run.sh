@@ -317,8 +317,8 @@ install_hermes_core() {
         local status_file
         status_file="$(mktemp)"
 
-        if ! python /usr/local/bin/hermes-dashboard-patches "$SRC_DIR" "$status_file"; then
-            echo "[run] WARNING: dashboard compatibility patch failed - continuing startup"
+        if ! /usr/local/bin/hermes-dashboard-patches "$src_dir" "$status_file"; then
+            echo "[run] [$name] WARNING: dashboard compatibility patch failed - continuing startup"
         fi
         if [ -s "$status_file" ]; then
             rebuild="true"
