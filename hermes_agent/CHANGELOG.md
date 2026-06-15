@@ -6,6 +6,8 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-06-15
+
 ### Added
 
 - Add this Home Assistant add-on changelog so users can see what changed before updating.
@@ -15,6 +17,21 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Clarify persistent storage documentation: container `/config` maps to the add-on's private `addon_config` storage, not the normal Home Assistant Core `/config` folder.
 - Document where to find the same storage from HAOS/Samba via the `addon_configs` share.
 - Correct the install-marker name shown in the storage tree for multi-profile aware versions.
+
+### Fixed
+
+- Fix the dashboard Chat tab behind Home Assistant Ingress by preserving WebSocket upgrades through the nginx `/dashboard/api/` proxy.
+- Forward `Upgrade` and mapped `Connection` headers for dashboard API routes while keeping normal REST calls on the same path sane.
+- Add regression coverage for primary and multi-profile dashboard API routes across Ingress, direct HTTP, and direct HTTPS render modes.
+
+### Verified
+
+- `git diff --check` - OK.
+- `python3 -m pytest -q tests/test_dashboard_ingress_patches.py` - 18 passed.
+- `python3 -m pytest -q` - 43 passed, 1 skipped.
+- `bash -n hermes_agent/nginx-render.sh hermes_agent/run.sh` - OK.
+- `python3 -m py_compile hermes_agent/dashboard-patches.py` - OK.
+- Live Home Assistant local DEV add-on smoke - add-on started, `nginx -t` passed, dashboard returned HTTP 200 through Ingress, and `/dashboard/api/pty`, `/dashboard/api/ws`, and `/dashboard/api/events` returned `HTTP/1.1 101 Switching Protocols`.
 
 ## [1.1.1] - 2026-06-04
 

@@ -182,6 +182,25 @@ class DashboardIngressPatchTests(unittest.TestCase):
         )
         self.assertNotIn("map_hash_bucket_size", nginx_ports)
 
+    def test_nginx_dashboard_api_locations_support_websocket_upgrades(self) -> None:
+        """Dashboard chat WebSockets share /dashboard/api/ with REST calls."""
+        nginx_conf = NGINX_TEMPLATE.read_text()
+
+        self.assertIn("map $http_upgrade $connection_upgrade", nginx_conf)
+        self.assertLess(
+            nginx_conf.index("map $http_upgrade $connection_upgrade"),
+            nginx_conf.index("%%DASHBOARD_MAPS%%"),
+        )
+
+        for server_kind in ("ingress", "http", "https"):
+            rendered = render_nginx_fragment(server_kind=server_kind)
+            for prefix in ("", "/profile/amy"):
+                start = rendered.index(f"location {prefix}/dashboard/api/")
+                end = rendered.index(f"location {prefix}/dashboard/", start + 1)
+                block = rendered[start:end]
+                self.assertIn("proxy_set_header Upgrade $http_upgrade;", block)
+                self.assertIn("proxy_set_header Connection $connection_upgrade;", block)
+
     def test_nginx_forwards_dashboard_prefix_to_modern_hermes(self) -> None:
         """Modern Hermes reads X-Forwarded-Prefix to set SPA base paths."""
         dashboard_maps = render_nginx_section("dashboard_maps")

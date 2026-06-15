@@ -21,6 +21,14 @@ http {
     # be set before any map block is parsed.
     map_hash_bucket_size 128;
 
+    # Dashboard /api/ carries both normal HTTP requests and WebSocket upgrades
+    # (/api/pty, /api/ws, /api/events). Preserve Upgrade semantics without
+    # forcing Connection: upgrade onto ordinary REST calls.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
 %%UPSTREAMS%%
 %%DASHBOARD_MAPS%%
 
