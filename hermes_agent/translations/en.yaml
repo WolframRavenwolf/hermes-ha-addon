@@ -45,7 +45,7 @@ configuration:
   env_vars:
     name: Hermes .env Variables
     description: >-
-      Written to ~/.hermes/.env on each start.
+      Written to each resolved profile's .env on each start.
       Use for API keys (e.g. OPENROUTER_API_KEY).
       Non-empty values override existing .env entries.
   hermes_home:
@@ -59,7 +59,8 @@ configuration:
     description: >-
       List of profile directories (relative to /config) to run concurrently.
       Bare names are placed under "profiles_base" (default .hermes/profiles).
-      Entries containing "/" or starting with "." are used as-is.
+      Non-dotted entries containing "/" are also placed under "profiles_base".
+      Entries starting with "." are used as-is.
       The first entry is the primary and keeps the root routes (/hermes/,
       /dashboard/, /v1/, /terminal/). Each additional profile is served under
       /profile/<name>/...

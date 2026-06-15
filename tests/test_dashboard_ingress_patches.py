@@ -245,10 +245,19 @@ class DashboardIngressPatchTests(unittest.TestCase):
         run_sh = RUN_SH.read_text()
 
         self.assertIn("hermes-dashboard-patches", run_sh)
-        self.assertIn('/usr/local/bin/hermes-dashboard-patches "$src_dir" "$status_file"', run_sh)
+        self.assertIn('/usr/local/bin/hermes-dashboard-patches "$SRC_DIR" "$status_file"', run_sh)
+        self.assertNotIn('hermes-dashboard-patches "$src_dir"', run_sh)
         self.assertNotIn("python /usr/local/bin/hermes-dashboard-patches", run_sh)
         self.assertNotIn("BASE ||", run_sh)
         self.assertNotIn("HA-ADDON-ROUTER-BASENAME-PATCHED", run_sh)
+
+    def test_run_script_preserves_profiles_base_default_when_option_missing(self) -> None:
+        """Upgrades from older options.json should still get the documented default."""
+        run_sh = RUN_SH.read_text()
+
+        self.assertIn('has("profiles_base")', run_sh)
+        self.assertIn('else ".hermes/profiles"', run_sh)
+        self.assertNotIn("PROFILES_BASE=$(opt profiles_base)", run_sh)
 
     def test_run_script_keeps_gateway_in_foreground_under_ha_s6(self) -> None:
         """The add-on wrapper, not upstream Hermes' s6 manager, supervises the gateway."""

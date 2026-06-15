@@ -6,6 +6,20 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+### Added
+
+- Add `profiles_base` so bare multi-profile names can default to upstream-style `.hermes/profiles/<name>` storage.
+
+### Changed
+
+- Use one shared Hermes Agent clone and virtualenv for all profiles instead of installing Hermes separately for every profile.
+- Preserve existing flat profile directories such as `/config/amy` during upgrades when the new `profiles_base` target does not exist yet.
+
+### Fixed
+
+- Fix the shared-install dashboard patch helper call so startup uses the shared `SRC_DIR` instead of removed per-profile variables.
+- Correct Home Assistant option text and storage documentation for the shared install and `profiles_base` behavior.
+
 ## [1.1.2] - 2026-06-15
 
 ### Added

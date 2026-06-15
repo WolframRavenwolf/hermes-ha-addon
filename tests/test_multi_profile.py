@@ -27,7 +27,7 @@ BASH = "/bin/bash" if sys.platform == "darwin" and os.path.exists("/bin/bash") e
 
 # ── A. resolve_profiles ──────────────────────────────────────────────
 
-def _run_resolve(options_json, *, legacy_hermes_home="", home_base=None, profiles_base=None):
+def _run_resolve(options_json, *, legacy_hermes_home="", home_base=None, profiles_base=None, existing_dirs=None):
     """Run resolve_profiles, return either {'rows': [...]} or {'error': '...'}.
 
     profiles_base: None → inherit profile-init default (`.hermes/profiles`).
@@ -38,6 +38,8 @@ def _run_resolve(options_json, *, legacy_hermes_home="", home_base=None, profile
         if home_base is None:
             home_base = tmp_path / "home"
             home_base.mkdir()
+        for existing in existing_dirs or []:
+            (home_base / existing).mkdir(parents=True, exist_ok=True)
         options_path = tmp_path / "options.json"
         options_path.write_text(json.dumps(options_json))
         export_profiles_base = (
@@ -162,6 +164,12 @@ class ProfileResolutionTests(unittest.TestCase):
     def test_profiles_base_empty_disables_prefix(self):
         """Empty PROFILES_BASE preserves the pre-feature layout (`/config/<name>`)."""
         res = _run_resolve({"profiles": ["amy"]}, profiles_base="")
+        home = res["home"]
+        self.assertEqual(res["rows"][0]["home"], f"{home}/amy")
+
+    def test_existing_flat_profile_dir_is_preserved_on_upgrade(self):
+        """Existing pre-profiles_base profile dirs must not silently move."""
+        res = _run_resolve({"profiles": ["amy"]}, existing_dirs=["amy"])
         home = res["home"]
         self.assertEqual(res["rows"][0]["home"], f"{home}/amy")
 

@@ -24,7 +24,10 @@ HASS_TOKEN=$(opt homeassistant_token)
 # shellcheck disable=SC2034  # consumed by resolve_profiles in profile-init.sh
 HERMES_HOME_DIR=$(opt hermes_home)
 # shellcheck disable=SC2034  # consumed by resolve_profiles in profile-init.sh
-PROFILES_BASE=$(opt profiles_base)
+# Preserve the documented default even when upgrading from an options.json that
+# predates profiles_base, while still allowing an explicit empty value to keep
+# legacy flat profile directories.
+PROFILES_BASE=$(jq -r 'if has("profiles_base") then (.profiles_base // "") else ".hermes/profiles" end' "$OPTIONS_FILE")
 ENABLE_DASHBOARD=$(opt_bool enable_dashboard)
 ENABLE_TERMINAL=$(opt_bool enable_terminal)
 ENABLE_API=$(opt_bool enable_api)
@@ -317,8 +320,8 @@ install_hermes_core() {
         local status_file
         status_file="$(mktemp)"
 
-        if ! /usr/local/bin/hermes-dashboard-patches "$src_dir" "$status_file"; then
-            echo "[run] [$name] WARNING: dashboard compatibility patch failed - continuing startup"
+        if ! /usr/local/bin/hermes-dashboard-patches "$SRC_DIR" "$status_file"; then
+            echo "[run] WARNING: dashboard compatibility patch failed - continuing startup"
         fi
         if [ -s "$status_file" ]; then
             rebuild="true"

@@ -82,6 +82,15 @@ resolve_profiles() {
     dir="${PROFILE_DIRS[$i]}"
     if [ "$profiles_from_list" = "true" ]; then
       effective_dir="$(_resolve_profile_dir "$dir" "$base")"
+      case "$dir" in
+        .*) ;;
+        *)
+          if [ -n "$base" ] && [ -d "$HOME/$dir" ] && [ ! -e "$HOME/$effective_dir" ]; then
+            echo "[profile-init] WARNING: using existing legacy profile directory '$dir' instead of '$effective_dir'; migrate the profile data or set profiles_base to empty to keep flat paths intentionally" >&2
+            effective_dir="$dir"
+          fi
+          ;;
+      esac
     else
       effective_dir="$dir"
     fi

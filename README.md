@@ -74,6 +74,8 @@ A single shared install at `~/.hermes/hermes-agent` (clone + venv) backs every p
 
 The first entry is the **primary** — it keeps the existing root URLs (`/hermes/`, `/dashboard/`, `/terminal/`, `/v1/`). Each additional profile is exposed under `/profile/<name>/...`. Per-profile ports allocate from a base + index (`8642`, `49269`, `49369`, `49469`).
 
+**Upgrade note:** If you already used bare profile names with earlier multi-profile add-on versions, existing flat directories such as `/config/amy` are preserved automatically when the new `.hermes/profiles/amy` directory does not exist yet. To keep flat paths intentionally, set `profiles_base` to an empty string. To adopt the upstream-style layout, move the profile data to `/config/.hermes/profiles/<name>`.
+
 **Note:** Values added via `env_vars` are not removed or reset from `.env` when cleared or removed in the Home Assistant UI -- edit each profile's `.env` directly to remove them.
 
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
@@ -235,7 +237,7 @@ The default single-profile layout after a successful first start is:
 ├── .npm-global/               # npm global packages
 ├── .bash_aliases              # Custom aliases and functions (optional, user-created)
 ├── .bashrc                    # Shell config
-├── .hermes_install_hermes     # Install marker for the default .hermes profile
+├── .hermes_install            # Shared install marker for the Hermes clone + venv
 ├── .hermes_profile            # Env vars + PATH (regenerated)
 ├── .profile                   # Sources .bashrc (login shell init)
 └── .tmux.conf                 # tmux config
