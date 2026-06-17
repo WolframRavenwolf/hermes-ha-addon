@@ -6,6 +6,20 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep Dashboard Chat WebSockets open behind Home Assistant Ingress by enabling `ingress_stream` and rewriting proxied dashboard API `Origin` headers to the dashboard backend host.
+- Fix direct-port Dashboard Chat WebSocket authentication when browsers send Basic auth plus the SPA `?token=` query parameter.
+
+### Verified
+
+- `git diff --check` - OK.
+- `bash -n hermes_agent/nginx-render.sh hermes_agent/run.sh` - OK.
+- `python3 -m py_compile hermes_agent/dashboard-patches.py` - OK.
+- `uv run --with pytest python -m pytest -q tests/test_dashboard_ingress_patches.py` - 21 passed.
+- `uv run --with pytest python -m pytest -q` - 53 passed, 1 skipped.
+- Live Home Assistant local DEV add-on lifecycle smoke - `/dashboard/api/pty` streamed binary TUI frames, `/dashboard/api/ws` emitted `gateway.ready`, and `/dashboard/api/events` stayed open through both HA Ingress and direct HTTPS access.
+
 ## [1.2.0] - 2026-06-15
 
 ### Added

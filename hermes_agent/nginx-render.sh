@@ -45,10 +45,11 @@ emit_token_maps() {
     for i in "${!PROFILE_DIRS[@]}"; do
         token="${DASHBOARD_TOKENS[$i]}"
         cat <<TOK
-    map "\$http_x_hermes_session_token|\$http_authorization" \$dashboard_token_ok_${i} {
+    map "\$http_x_hermes_session_token|\$http_authorization|\$arg_token" \$dashboard_token_ok_${i} {
         default 0;
         ~^${token}\| 1;
-        ~^\|Bearer\ ${token}\$ 1;
+        ~^\|Bearer\ ${token}\| 1;
+        ~\|${token}\$ 1;
     }
 TOK
     done
@@ -174,6 +175,7 @@ DSTATUS
             proxy_http_version 1.1;
             proxy_set_header Upgrade \$http_upgrade;
             proxy_set_header Connection \$connection_upgrade;
+            proxy_set_header Origin "http://127.0.0.1";
             proxy_set_header Host 127.0.0.1;
             proxy_set_header X-Forwarded-Host \$host;
             proxy_set_header X-Forwarded-Prefix \$dashboard_forwarded_prefix_${i};

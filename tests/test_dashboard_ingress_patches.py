@@ -14,6 +14,7 @@ RUN_SH = ROOT / "hermes_agent" / "run.sh"
 NGINX_RENDER_LIB = ROOT / "hermes_agent" / "nginx-render.sh"
 NGINX_TEMPLATE = ROOT / "hermes_agent" / "nginx.conf.tpl"
 NGINX_PORTS_TEMPLATE = ROOT / "hermes_agent" / "nginx-ports.conf.tpl"
+ADDON_CONFIG = ROOT / "hermes_agent" / "config.yaml"
 LANDING_TEMPLATE = ROOT / "hermes_agent" / "landing.html.tpl"
 
 
@@ -157,16 +158,27 @@ class DashboardIngressPatchTests(unittest.TestCase):
         self.assertIn("location /dashboard/", rendered)
         self.assertIn("proxy_pass http://hermes_dashboard_0/;", rendered)
 
-    def test_direct_port_dashboard_api_accepts_spa_session_header(self) -> None:
-        """Direct-port nginx guard must match the SPA's current token header."""
+    def test_direct_port_dashboard_api_accepts_spa_session_token_sources(self) -> None:
+        """Direct-port WebSockets must survive Basic auth plus ?token= auth."""
         token_maps = render_nginx_section("token_maps")
 
         self.assertIn("$http_x_hermes_session_token", token_maps)
+        self.assertIn("$http_authorization", token_maps)
+        self.assertIn("$arg_token", token_maps)
         self.assertIn("$dashboard_token_ok_0", token_maps)
         self.assertIn("~^TOK0\\|", token_maps)
-        self.assertIn("~^\\|Bearer\\ TOK0$", token_maps)
+        self.assertIn("~^\\|Bearer\\ TOK0\\|", token_maps)
+        self.assertIn("~\\|TOK0$", token_maps)
         # Per-profile maps are emitted, one per profile.
         self.assertIn("$dashboard_token_ok_1", token_maps)
+
+    def test_addon_enables_ingress_stream_for_websockets(self) -> None:
+        """Home Assistant Ingress must stream WebSocket traffic to the add-on."""
+        addon_config = ADDON_CONFIG.read_text()
+
+        self.assertIn("ingress: true", addon_config)
+        self.assertIn("ingress_port:", addon_config)
+        self.assertIn("ingress_stream: true", addon_config)
 
     def test_nginx_sets_map_hash_bucket_size_before_dashboard_maps(self) -> None:
         """nginx rejects map_hash_bucket_size after any map block has been parsed."""
@@ -200,6 +212,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
                 block = rendered[start:end]
                 self.assertIn("proxy_set_header Upgrade $http_upgrade;", block)
                 self.assertIn("proxy_set_header Connection $connection_upgrade;", block)
+                self.assertIn('proxy_set_header Origin "http://127.0.0.1";', block)
 
     def test_nginx_forwards_dashboard_prefix_to_modern_hermes(self) -> None:
         """Modern Hermes reads X-Forwarded-Prefix to set SPA base paths."""
