@@ -6,6 +6,9 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+### Added
+- Boot hook system: `post-config` and `ready` phases, opt-in via `enable_boot_hooks`.
+
 ## [1.2.1] - 2026-06-18
 
 ### Fixed

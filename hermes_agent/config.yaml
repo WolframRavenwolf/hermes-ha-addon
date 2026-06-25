@@ -38,6 +38,7 @@ options:
   enable_dashboard: false
   enable_terminal: false
   enable_api: false
+  enable_boot_hooks: false
   access_password: ""
   env_vars:
     - name: "OPENROUTER_API_KEY"
@@ -60,6 +61,7 @@ schema:
   enable_dashboard: "bool"
   enable_terminal: "bool"
   enable_api: "bool"
+  enable_boot_hooks: "bool"
   access_password: "password?"
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"

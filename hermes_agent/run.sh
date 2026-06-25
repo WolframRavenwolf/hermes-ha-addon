@@ -31,6 +31,7 @@ PROFILES_BASE=$(jq -r 'if has("profiles_base") then (.profiles_base // "") else 
 ENABLE_DASHBOARD=$(opt_bool enable_dashboard)
 ENABLE_TERMINAL=$(opt_bool enable_terminal)
 ENABLE_API=$(opt_bool enable_api)
+ENABLE_BOOT_HOOKS=$(opt_bool enable_boot_hooks)
 ACCESS_PASSWORD=$(opt access_password)
 
 # ── Section 2: System setup ─────────────────────────────────────────
@@ -598,6 +599,13 @@ echo "[run] Nginx configured (ingress: $INGRESS_PORT, HTTP: $HTTP_PORT, HTTPS: $
 # ── Section 10: Start services (per profile) ─────────────────────────
 GATEWAY_PIDS=()
 TTYD_HERMES_PIDS=()
+
+# ── Boot hooks: post-config (before services) ──
+if [ "$ENABLE_BOOT_HOOKS" = "true" ]; then
+    python3 /usr/local/lib/hermes-hooks-runner.py run post-config 2>&1 | sed 's/^/[hooks] /'
+    echo "[run] Boot hooks (post-config) complete"
+fi
+
 TTYD_TERMINAL_PIDS=()
 DASHBOARD_PIDS=()
 
@@ -757,6 +765,12 @@ done
 render_nginx_config
 
 reload_nginx
+
+# ── Boot hooks: ready (services running, nginx reloaded) ──
+if [ "$ENABLE_BOOT_HOOKS" = "true" ]; then
+    python3 /usr/local/lib/hermes-hooks-runner.py run ready 2>&1 | sed 's/^/[hooks] /'
+    echo "[run] Boot hooks (ready) complete"
+fi
 
 echo "[run] All services started"
 BASE_URL="${HASS_URL:-http://localhost}"

@@ -42,6 +42,7 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
 | `enable_terminal`     | `false`                                            | Enable web terminal on direct HTTP/HTTPS ports                                  |
 | `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server on direct HTTP/HTTPS ports              |
+| `enable_boot_hooks`   | `false`                                            | Enable boot hook scripts (expert)                                                |
 | `access_password`     |                                                    | Password for HTTP/HTTPS access (web terminal). Also used as the server API key  |
 | `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes .env variables — written to each profile's `.env` on each start          |
 | `hermes_home`         | `.hermes`                                          | Single-profile mode: agent profile directory (relative to ~). Ignored if `profiles` is non-empty |
@@ -77,6 +78,39 @@ The first entry is the **primary** — it keeps the existing root URLs (`/hermes
 **Upgrade note:** If you already used bare profile names with earlier multi-profile add-on versions, existing flat directories such as `/config/amy` are preserved automatically when the new `.hermes/profiles/amy` directory does not exist yet. To keep flat paths intentionally, set `profiles_base` to an empty string. To adopt the upstream-style layout, move the profile data to `/config/.hermes/profiles/<name>`.
 
 **Note:** Values added via `env_vars` are not removed or reset from `.env` when cleared or removed in the Home Assistant UI -- edit each profile's `.env` directly to remove them.
+
+## Boot Hooks (expert)
+
+When `enable_boot_hooks` is enabled, the add-on runs executable scripts from `/config/.hermes/addon-hooks/` at two well-defined points in the boot lifecycle:
+
+| Phase | When | Typical use |
+|-------|------|-------------|
+| `post-config` | After profile scaffolding and env configuration, before service startup | Start sidecar processes, set up additional infrastructure |
+| `ready` | After gateways, dashboards, nginx reloaded, and routes live | Health checks, post-start adjustments, notifications |
+
+Hooks run as isolated subprocesses with a 30-second timeout. A hook that exits non-zero is logged but does not abort the boot. All output is written to `HERMES_HOME/logs/boot-hooks.log`.
+
+Only `.sh` and `.py` files are accepted. Files must be executable (`chmod +x`) and must not be symlinks. Hooks run in lexicographic order within each phase.
+
+Example — a ready-phase health check:
+
+```bash
+# /config/.hermes/addon-hooks/ready/10-health-check.sh
+#!/bin/bash
+curl -sf http://localhost:8080/health || exit 1
+```
+
+Example — a post-config sidecar:
+
+```bash
+# /config/.hermes/addon-hooks/post-config/10-start-tts-proxy.sh
+#!/bin/bash
+nohup python3 /path/to/tts_proxy.py --port 8765 &
+```
+
+Keep hooks idempotent: they run on every start. `enable_boot_hooks` is off by default — enable only when you need custom boot-time logic.
+
+---
 
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
 

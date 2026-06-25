@@ -85,6 +85,9 @@ COPY landing.html.tpl /var/www/landing.html.tpl
 COPY loading.html /var/www/loading.html
 COPY brew-wrapper.sh /usr/local/bin/brew-wrapper
 COPY dashboard-patches.py /usr/local/bin/hermes-dashboard-patches
+
+# Boot hook runner
+COPY hooks_runner.py /usr/local/lib/hermes-hooks-runner.py
 RUN chmod +x /run.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches
 
 # ── nginx dirs ───────────────────────────────────────────────────────
