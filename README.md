@@ -13,7 +13,7 @@
 - **Multi-platform messaging** -- Telegram, Discord, WhatsApp, and more via the gateway
 - **OpenAI-compatible API** -- connect any chat frontend ([Open WebUI](https://github.com/open-webui/open-webui), [SillyTavern](https://github.com/SillyTavern/SillyTavern), etc.) via `/v1/`
 - **Plugin architecture** -- custom tools, commands, and hooks without forking
-- **Companion social plugin** - add [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet) when Home Assistant automations need X/Twitter post, account, trend, or search context
+- **Companion social plugin** -- add [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet) when Home Assistant automations need X/Twitter post, account, trend, or search context
 - **Self-modifiable source** -- editable install lets the agent read and modify its own code
 - **Web dashboard** -- browser-based management UI for config, API keys, sessions, analytics, logs, cron, and skills
 - **Persistent web terminal** -- full CLI access via tmux-backed ttyd through the Home Assistant sidebar
