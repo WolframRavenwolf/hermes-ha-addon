@@ -12,6 +12,7 @@
 - **Self-improving skills** -- agent learns and creates new capabilities over time
 - **Multi-platform messaging** -- Telegram, Discord, WhatsApp, and more via the gateway
 - **OpenAI-compatible API** -- connect any chat frontend ([Open WebUI](https://github.com/open-webui/open-webui), [SillyTavern](https://github.com/SillyTavern/SillyTavern), etc.) via `/v1/`
+- **Hermes Desktop backend** -- opt-in remote backend for the official Hermes Desktop app on a dedicated port
 - **Plugin architecture** -- custom tools, commands, and hooks without forking
 - **Self-modifiable source** -- editable install lets the agent read and modify its own code
 - **Web dashboard** -- browser-based management UI for config, API keys, sessions, analytics, logs, cron, and skills
@@ -42,7 +43,8 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
 | `enable_terminal`     | `false`                                            | Enable web terminal on direct HTTP/HTTPS ports                                  |
 | `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server on direct HTTP/HTTPS ports              |
-| `access_password`     |                                                    | Password for HTTP/HTTPS access (web terminal). Also used as the server API key  |
+| `enable_desktop_backend` | `false`                                         | Enable the official Hermes Desktop remote backend on container port 9119        |
+| `access_password`     |                                                    | Password for HTTP/HTTPS, API, and Hermes Desktop access (username: `hermes`)    |
 | `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes .env variables — written to each profile's `.env` on each start          |
 | `hermes_home`         | `.hermes`                                          | Single-profile mode: agent profile directory (relative to ~). Ignored if `profiles` is non-empty |
 | `profiles`            | `[]`                                               | Multi-profile mode: list of profile directories run concurrently. First entry is the primary |
@@ -91,7 +93,7 @@ hermes gateway setup  # Configure messaging platforms
 
 The add-on is accessible via the **Home Assistant Sidebar** (landing page with embedded terminal, mode switching, and status display) and, optionally, via direct URLs. Replace `homeassistant.local` with your Home Assistant hostname or IP.
 
-Direct HTTP/HTTPS access requires `enable_dashboard` (**Enable Web Dashboard**), `enable_terminal` (**Enable Web Terminal**), and/or `enable_api` (**Enable API Server**) in the add-on configuration. Set an **Access Password** to secure these ports (username: `hermes`).
+Direct HTTP/HTTPS access requires `enable_dashboard` (**Enable Web Dashboard**), `enable_terminal` (**Enable Web Terminal**), and/or `enable_api` (**Enable API Server**) in the add-on configuration. Set an **Access Password** to secure these ports (username: `hermes`). The separate Hermes Desktop backend requires `enable_desktop_backend`, an access password, and an explicit host-port mapping for container port 9119 under **Network**.
 
 ### Web Terminal & Dashboard
 
@@ -101,6 +103,20 @@ Direct HTTP/HTTPS access requires `enable_dashboard` (**Enable Web Dashboard**),
 | `https://homeassistant.local:8443/dashboard/`  | Web dashboard (config, API keys, sessions, analytics, logs)              |
 | `https://homeassistant.local:8443/terminal/`   | Shell terminal (non-login shell -- plain shell, hermes not auto-started) |
 | `https://homeassistant.local:8443/cert/ca.crt` | CA certificate download (for trusting self-signed HTTPS)                 |
+
+### Hermes Desktop remote backend
+
+The official Hermes Desktop app can use the add-on's primary Hermes installation as a remote backend:
+
+1. Set a strong `access_password`.
+2. Enable `enable_desktop_backend`.
+3. Under the add-on's **Network** settings, map container port `9119` to the host port you want to use (normally `9119`).
+4. In Hermes Desktop, add `http://homeassistant.local:9119` as the remote backend URL, replacing the hostname and host port when necessary.
+5. Log in with username `hermes` and the configured access password.
+
+This opt-in endpoint provides powerful, full agent control. The add-on does not claim process or secret isolation from authenticated agent activity. Enable it only when you accept that risk, and expose it only on a trusted LAN, VPN, or Tailscale path. Do not publish port 9119 directly to the internet.
+
+The Desktop backend derives and pins Hermes' machine root from the primary `HERMES_HOME` before Hermes loads its configuration. Standard Hermes profiles below that machine root remain available through Hermes Desktop; legacy flat profiles outside that root are not promised through this endpoint.
 
 ### OpenAI-compatible API
 
@@ -119,12 +135,13 @@ OpenAI-compatible API access requires `enable_api` (**Enable API Server**) in th
 
 ### Ports
 
-Both ports are configurable in the Home Assistant add-on network settings. Use the HTTPS port (8443) with an access password for secure access. The HTTP port (8080) is intended for TLS-terminating reverse proxies and disabled by default.
+All direct ports are configurable in the Home Assistant add-on network settings. Use the HTTPS port (8443) with an access password for secure browser access. The HTTP port (8080) is intended for TLS-terminating reverse proxies and disabled by default. Port 9119 is the opt-in Hermes Desktop backend and is also unmapped by default.
 
 | Port     | Description                                          |
 | -------- | ---------------------------------------------------- |
 | **8080** | HTTP access (all URLs above, replace 8443 with 8080) |
 | **8443** | HTTPS access (TLS with self-signed cert)             |
+| **9119** | Hermes Desktop remote backend (plain HTTP; trusted LAN/VPN/Tailscale only) |
 
 ### SSH
 
@@ -175,17 +192,19 @@ Authentication layers differ by access path:
   1. **Basic Auth** (username `hermes`, password = `access_password`) gates the landing page, Terminal, and Dashboard HTML.
   2. **Session Token** (ephemeral, rotates on every add-on restart) gates dashboard API calls. The token is injected into the dashboard HTML on load — only clients who successfully loaded the page via Basic Auth ever see it. Requests to `/dashboard/api/*` without a matching Bearer token return 401. Only `/dashboard/api/status` is public (it mirrors Hermes' own whitelist and powers the landing page health indicator). If the dashboard process is restarted without restarting the add-on, the nginx-side token cache goes stale — restart the add-on to re-sync.
 - **OpenAI-compatible API** (`/v1/*`): Bearer token authentication. The `access_password` doubles as the API key, passed as `Authorization: Bearer <api-key>`.
+- **Hermes Desktop backend** (`:9119` when enabled and mapped): Hermes Basic-auth login using username `hermes` and `access_password`. This endpoint exposes the full Desktop backend contract, including chat, WebSockets, PTY, events, profiles, and agent control. It is disabled and unmapped by default. Enabling it is an explicit risk decision; keep it on a trusted LAN/VPN/Tailscale path and do not expose it directly to the internet.
 
 If you expose direct ports to the internet, place a network-perimeter gate (firewall, VPN, reverse proxy with stronger auth) in front — Basic Auth alone is not brute-force resistant.
 
 ## Architecture
 
-Four services in a Debian Bookworm container:
+Five service families in a Debian Bookworm container:
 
 1. **Hermes Gateway** (`hermes gateway run`) -- persistent AI agent daemon with OpenAI-compatible API server and messaging platform connectors. Logs visible in the Home Assistant add-on log and in `~/.hermes/logs/gateway.log`.
 2. **Hermes Dashboard** (`hermes dashboard`) -- browser-based management UI (FastAPI + React) for config, API keys, sessions, analytics, logs, cron jobs, and skills.
 3. **ttyd** (×2 per profile) -- web terminals backed by persistent tmux sessions (`hermes-<name>` + `terminal-<name>`)
 4. **nginx** -- HTTP, HTTPS, and Home Assistant ingress proxy routing to dashboard + terminal + API. Multi-profile setups serve `/profile/<name>/...` for non-primary profiles.
+5. **Hermes Desktop backend** (`hermes serve`, optional) -- official root-level HTTP/WebSocket backend on container port 9119, using the primary Hermes machine root and Basic-auth login.
 
 ### Shell Environment
 

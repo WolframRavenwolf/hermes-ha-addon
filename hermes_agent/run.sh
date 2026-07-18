@@ -31,6 +31,7 @@ PROFILES_BASE=$(jq -r 'if has("profiles_base") then (.profiles_base // "") else 
 ENABLE_DASHBOARD=$(opt_bool enable_dashboard)
 ENABLE_TERMINAL=$(opt_bool enable_terminal)
 ENABLE_API=$(opt_bool enable_api)
+ENABLE_DESKTOP_BACKEND=$(opt_bool enable_desktop_backend)
 ACCESS_PASSWORD=$(opt access_password)
 
 # ── Section 2: System setup ─────────────────────────────────────────
@@ -91,6 +92,26 @@ CERTS_DIR="$HOME/.certs"
 INGRESS_PORT=49169
 HTTP_PORT=8080
 HTTPS_PORT=8443
+DESKTOP_BACKEND_PORT=9119
+
+# Desktop backend lifecycle helpers. The feature is opt-in and validation runs
+# before nginx or any Hermes service starts.
+DESKTOP_BACKEND_LIB=""
+for _candidate in \
+    "/usr/local/lib/hermes-desktop-backend.sh" \
+    "$(dirname "${BASH_SOURCE[0]}")/desktop-backend.sh"; do
+    if [ -f "$_candidate" ]; then
+        DESKTOP_BACKEND_LIB="$_candidate"
+        break
+    fi
+done
+if [ -z "$DESKTOP_BACKEND_LIB" ]; then
+    echo "[run] FATAL: desktop-backend.sh not found"
+    exit 1
+fi
+# shellcheck source=desktop-backend.sh
+source "$DESKTOP_BACKEND_LIB"
+desktop_backend_validate_options || exit 1
 
 # Start nginx early with loading page (replaced with full config after setup)
 cat > /etc/nginx/nginx.conf << LOADCONF
@@ -353,6 +374,7 @@ source "$VENV_DIR/bin/activate"
 HERMES_VERSION="$("$VENV_DIR/bin/hermes" --version 2>/dev/null | head -1 || echo "unknown")"
 export HERMES_VERSION
 echo "[run] Hermes version: $HERMES_VERSION"
+desktop_backend_validate_runtime || exit 1
 
 # ── Section 6: Initial config scaffolding (per profile) ──────────────
 scaffold_profile_files() {
@@ -600,6 +622,7 @@ GATEWAY_PIDS=()
 TTYD_HERMES_PIDS=()
 TTYD_TERMINAL_PIDS=()
 DASHBOARD_PIDS=()
+DESKTOP_BACKEND_PID=""
 
 start_gateway_for_profile() {
     local i="$1"
@@ -738,6 +761,41 @@ reload_nginx() {
     echo "[run] nginx reloaded"
 }
 
+# ── Section 11: Signal handling ──────────────────────────────────────
+shutdown() {
+    echo ""
+    echo "[run] Shutting down..."
+    nginx -s quit 2>/dev/null || true
+    echo "[run] nginx stopped"
+    desktop_backend_stop
+    for i in "${!PROFILE_DIRS[@]}"; do
+        for pid in "${TTYD_TERMINAL_PIDS[$i]:-}" "${TTYD_HERMES_PIDS[$i]:-}" "${DASHBOARD_PIDS[$i]:-}"; do
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+            fi
+        done
+    done
+    echo "[run] ttyd + dashboards stopped"
+    for i in "${!PROFILE_DIRS[@]}"; do
+        local pid="${GATEWAY_PIDS[$i]:-}"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" 2>/dev/null || true
+            local waited=0
+            while kill -0 "$pid" 2>/dev/null && [ $waited -lt 10 ]; do
+                sleep 1
+                waited=$((waited + 1))
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "[run] [${PROFILE_NAMES[$i]}] Gateway didn't stop gracefully, force killing..."
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            echo "[run] [${PROFILE_NAMES[$i]}] Gateway stopped"
+        fi
+    done
+    echo "[run] Shutdown complete"
+    exit 0
+}
+
 # Register signal handler BEFORE starting services
 trap shutdown SIGTERM SIGINT
 
@@ -748,6 +806,8 @@ for i in "${!PROFILE_DIRS[@]}"; do
     start_ttyd_for_profile "$i"
     start_dashboard_for_profile "$i"
 done
+
+desktop_backend_start
 
 for i in "${!PROFILE_DIRS[@]}"; do
     inject_dashboard_token_for_profile "$i"
@@ -780,44 +840,12 @@ for i in "${!PROFILE_DIRS[@]}"; do
     echo "   Terminal:  ${BASE_URL}${prefix}/terminal/"
     echo "   API:       ${BASE_URL}${prefix}/v1/"
 done
+[ "$ENABLE_DESKTOP_BACKEND" = "true" ] && echo " Desktop:    container port ${DESKTOP_BACKEND_PORT} (use the Home Assistant Network host port)"
 echo "─────────────────────────────────────────────"
-
-# ── Section 11: Signal handling ──────────────────────────────────────
-shutdown() {
-    echo ""
-    echo "[run] Shutting down..."
-    nginx -s quit 2>/dev/null || true
-    echo "[run] nginx stopped"
-    for i in "${!PROFILE_DIRS[@]}"; do
-        for pid in "${TTYD_TERMINAL_PIDS[$i]:-}" "${TTYD_HERMES_PIDS[$i]:-}" "${DASHBOARD_PIDS[$i]:-}"; do
-            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                kill "$pid" 2>/dev/null || true
-            fi
-        done
-    done
-    echo "[run] ttyd + dashboards stopped"
-    for i in "${!PROFILE_DIRS[@]}"; do
-        local pid="${GATEWAY_PIDS[$i]:-}"
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill -TERM "$pid" 2>/dev/null || true
-            local waited=0
-            while kill -0 "$pid" 2>/dev/null && [ $waited -lt 10 ]; do
-                sleep 1
-                waited=$((waited + 1))
-            done
-            if kill -0 "$pid" 2>/dev/null; then
-                echo "[run] [${PROFILE_NAMES[$i]}] Gateway didn't stop gracefully, force killing..."
-                kill -9 "$pid" 2>/dev/null || true
-            fi
-            echo "[run] [${PROFILE_NAMES[$i]}] Gateway stopped"
-        fi
-    done
-    echo "[run] Shutdown complete"
-    exit 0
-}
 
 # ── Section 12: Supervisor loop ──────────────────────────────────────
 while true; do
+    desktop_backend_supervise
     for i in "${!PROFILE_DIRS[@]}"; do
         pid="${GATEWAY_PIDS[$i]:-}"
         if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then

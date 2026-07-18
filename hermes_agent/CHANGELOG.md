@@ -6,6 +6,16 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+### Added
+
+- Add an opt-in Hermes Desktop remote backend on container port 9119 using the official `hermes serve` contract and the existing access password.
+- Keep the Desktop port unmapped and the feature disabled by default; Home Assistant's Network settings choose the external host port.
+
+### Security
+
+- Require `access_password` whenever the Desktop backend is enabled.
+- Warn that authenticated Desktop access provides full agent control, carries the accepted opt-in risk, and belongs only on a trusted LAN/VPN/Tailscale path rather than the public internet.
+
 ## [1.2.1] - 2026-06-18
 
 ### Fixed

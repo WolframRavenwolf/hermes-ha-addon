@@ -79,13 +79,15 @@ RUN su - linuxbrew -c \
 COPY run.sh /
 COPY nginx-render.sh /usr/local/lib/hermes-nginx-render.sh
 COPY profile-init.sh /usr/local/lib/hermes-profile-init.sh
+COPY desktop-backend.sh /usr/local/lib/hermes-desktop-backend.sh
+COPY desktop-backend-launcher.py /usr/local/bin/hermes-desktop-backend
 COPY nginx.conf.tpl /etc/nginx/nginx.conf.tpl
 COPY nginx-ports.conf.tpl /etc/nginx/nginx-ports.conf.tpl
 COPY landing.html.tpl /var/www/landing.html.tpl
 COPY loading.html /var/www/loading.html
 COPY brew-wrapper.sh /usr/local/bin/brew-wrapper
 COPY dashboard-patches.py /usr/local/bin/hermes-dashboard-patches
-RUN chmod +x /run.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches
+RUN chmod +x /run.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches /usr/local/bin/hermes-desktop-backend
 
 # ── nginx dirs ───────────────────────────────────────────────────────
 RUN mkdir -p /var/www /var/log/nginx /run/nginx

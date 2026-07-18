@@ -37,11 +37,17 @@ configuration:
     description: >-
       ⚠️ Enable the OpenAI-compatible API server on direct HTTP/HTTPS ports (configured under Network below).
       The access password doubles as the server API key.
+  enable_desktop_backend:
+    name: Enable Hermes Desktop Backend
+    description: >-
+      ⚠️ Opt in to the powerful Hermes Desktop remote backend on container port 9119.
+      Requires an access password. Map the port under Network and expose it only on a trusted LAN/VPN/Tailscale path.
+      Authenticated Desktop users receive full agent control and accept that risk.
   access_password:
     name: Access Password
     description: >-
       ⚠️ Password for direct HTTP/HTTPS access. Username: hermes.
-      Also used as the server API key.
+      Also used as the server API key and Hermes Desktop password.
   env_vars:
     name: Hermes .env Variables
     description: >-
