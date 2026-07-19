@@ -6,6 +6,8 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-19
+
 ### Added
 
 - Add an opt-in Hermes Desktop remote backend on container port 9119 using the official `hermes serve` contract and the existing access password.
@@ -15,6 +17,15 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 - Require `access_password` whenever the Desktop backend is enabled.
 - Warn that authenticated Desktop access provides full agent control, carries the accepted opt-in risk, and belongs only on a trusted LAN/VPN/Tailscale path rather than the public internet.
+
+### Verified
+
+- `PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -m unittest discover -s tests -v` - 66 tests OK, 1 skipped.
+- Shell syntax, Python AST, YAML parsing, public-repository hygiene, and `git diff --check` passed.
+- An isolated Home Assistant test repository built and installed the add-on without changing the stopped production installation.
+- The live remote backend enforced authentication, exposed the `default` and `worker` profiles, minted single-use WebSocket tickets, and rejected ticket reuse.
+- The codesign-verified Hermes Desktop app connected through its real cookie-authenticated remote path and reached the expected provider onboarding for the credential-free test profile.
+- Independent code reviews completed with no blocking findings.
 
 ## [1.2.1] - 2026-06-18
 
