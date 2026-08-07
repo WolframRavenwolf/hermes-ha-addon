@@ -624,5 +624,35 @@ class RenderedConfigTests(unittest.TestCase):
         )
 
 
+class RunScriptTtydCwdTests(unittest.TestCase):
+    """Each ttyd invocation in run.sh must pin the working directory to the
+    profile home (-w "$home"), otherwise web terminals (and sessions created
+    through them / adopted by the desktop app via session.info) start in "/"
+    instead of the profile home."""
+
+    RUN_SH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hermes_agent", "run.sh")
+
+    def setUp(self):
+        with open(self.RUN_SH, encoding="utf-8") as f:
+            self.run_sh = f.read()
+
+    def test_ttyd_hermes_invocation_pins_cwd(self):
+        # The hermes (chat) ttyd must pass -w "$home" before tmux.
+        block = self.run_sh.split("start_ttyd_for_profile()", 1)[1].split("TTYD_HERMES_PIDS[$i]=$!", 1)[0]
+        self.assertIn('-w "$home"', block, "hermes ttyd invocation missing -w \"$home\"")
+
+    def test_ttyd_terminal_invocation_pins_cwd(self):
+        # The terminal ttyd must pass -w "$home" before tmux.
+        block = self.run_sh.split("TTYD_HERMES_PIDS[$i]=$!", 1)[1].split("TTYD_TERMINAL_PIDS[$i]=$!", 1)[0]
+        self.assertIn('-w "$home"', block, "terminal ttyd invocation missing -w \"$home\"")
+
+    def test_both_invocations_place_cwd_before_tmux(self):
+        # -w must be attached to ttyd (not after the command) so ttyd applies it.
+        for needle in ("tmux -L \"hermes-", "tmux -L \"terminal-"):
+            idx = self.run_sh.index(needle)
+            preceding = self.run_sh[max(0, idx - 60):idx]
+            self.assertIn('-w "$home"', preceding, f"-w \"$home\" not before {needle}")
+
+
 if __name__ == "__main__":
     unittest.main()

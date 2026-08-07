@@ -692,6 +692,7 @@ start_ttyd_for_profile() {
             --interface 127.0.0.1 \
             --base-path "${prefix}/hermes/" \
             --writable -d 3 \
+            -w "$home" \
             tmux -L "hermes-${name}" -u new -A -s "hermes-${name}" /usr/local/bin/start-hermes &
     TTYD_HERMES_PIDS[$i]=$!
 
@@ -701,6 +702,7 @@ start_ttyd_for_profile() {
             --interface 127.0.0.1 \
             --base-path "${prefix}/terminal/" \
             --writable -d 3 \
+            -w "$home" \
             tmux -L "terminal-${name}" -u new -A -s "terminal-${name}" /usr/bin/bash &
     TTYD_TERMINAL_PIDS[$i]=$!
     echo "[run] [$name] ttyd PIDs: hermes=${TTYD_HERMES_PIDS[$i]} terminal=${TTYD_TERMINAL_PIDS[$i]}"
