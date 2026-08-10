@@ -32,7 +32,83 @@ ENABLE_DASHBOARD=$(opt_bool enable_dashboard)
 ENABLE_TERMINAL=$(opt_bool enable_terminal)
 ENABLE_API=$(opt_bool enable_api)
 ENABLE_DESKTOP_BACKEND=$(opt_bool enable_desktop_backend)
-ACCESS_PASSWORD=$(opt access_password)
+
+# Validate and normalize the API credential before nginx, installation, or any
+# Hermes service can start. The disabled API preserves existing password behavior.
+API_SERVER_LIB=""
+for _candidate in \
+    "/usr/local/lib/hermes-api-server.sh" \
+    "$(dirname "${BASH_SOURCE[0]}")/api-server.sh"; do
+    if [ -f "$_candidate" ]; then
+        API_SERVER_LIB="$_candidate"
+        break
+    fi
+done
+if [ -z "$API_SERVER_LIB" ]; then
+    echo "[run] FATAL: api-server.sh not found" >&2
+    exit 1
+fi
+# shellcheck source=api-server.sh
+source "$API_SERVER_LIB"
+GATEWAY_LAUNCHER=""
+for _candidate in \
+    "/usr/local/lib/hermes-gateway-launcher.py" \
+    "$(dirname "${BASH_SOURCE[0]}")/gateway-launcher.py"; do
+    if [ -f "$_candidate" ]; then
+        GATEWAY_LAUNCHER="$_candidate"
+        break
+    fi
+done
+if [ -z "$GATEWAY_LAUNCHER" ]; then
+    echo "[run] FATAL: gateway-launcher.py not found" >&2
+    exit 1
+fi
+GATEWAY_CHILD=""
+for _candidate in \
+    "/usr/local/lib/hermes-gateway-child.sh" \
+    "$(dirname "${BASH_SOURCE[0]}")/gateway-child.sh"; do
+    if [ -x "$_candidate" ]; then
+        GATEWAY_CHILD="$_candidate"
+        break
+    fi
+done
+if [ -z "$GATEWAY_CHILD" ]; then
+    echo "[run] FATAL: gateway-child.sh not found or not executable" >&2
+    exit 1
+fi
+GATEWAY_SUPERVISOR=""
+for _candidate in \
+    "/usr/local/lib/hermes-gateway-supervisor.py" \
+    "$(dirname "${BASH_SOURCE[0]}")/gateway-supervisor.py"; do
+    if [ -f "$_candidate" ]; then
+        GATEWAY_SUPERVISOR="$_candidate"
+        break
+    fi
+done
+if [ -z "$GATEWAY_SUPERVISOR" ]; then
+    echo "[run] FATAL: gateway-supervisor.py not found" >&2
+    exit 1
+fi
+GATEWAY_LOGGER=""
+for _candidate in \
+    "/usr/local/lib/hermes-gateway-logger.py" \
+    "$(dirname "${BASH_SOURCE[0]}")/gateway-logger.py"; do
+    if [ -f "$_candidate" ]; then
+        GATEWAY_LOGGER="$_candidate"
+        break
+    fi
+done
+if [ -z "$GATEWAY_LOGGER" ]; then
+    echo "[run] FATAL: gateway-logger.py not found" >&2
+    exit 1
+fi
+if ! api_server_read_json_string \
+    "$OPTIONS_FILE" access_password "" ACCESS_PASSWORD; then
+    echo "[run] FATAL: could not read access_password" >&2
+    exit 1
+fi
+api_server_validate_env_records "$OPTIONS_FILE" || exit 1
+api_server_validate_options || exit 1
 
 # ── Section 2: System setup ─────────────────────────────────────────
 # Timezone: sync /etc/localtime + /etc/timezone from HA's TZ env var
@@ -618,7 +694,11 @@ sed -i \
 echo "[run] Nginx configured (ingress: $INGRESS_PORT, HTTP: $HTTP_PORT, HTTPS: $HTTPS_PORT)"
 
 # ── Section 10: Start services (per profile) ─────────────────────────
+RUN_SH_PID=$$
 GATEWAY_PIDS=()
+GATEWAY_LOGGER_PIDS=()
+GATEWAY_LOG_PIPES=()
+GATEWAY_READY_FILES=()
 TTYD_HERMES_PIDS=()
 TTYD_TERMINAL_PIDS=()
 DASHBOARD_PIDS=()
@@ -632,27 +712,81 @@ start_gateway_for_profile() {
 
     echo "[run] [$name] Starting gateway (API port: $port)..."
     mkdir -p "$home/logs"
+    local log_pipe="/run/hermes-gateway-${i}.fifo"
+    local ready_file="/run/hermes-gateway-${i}.ready"
+    rm -f -- "$log_pipe" "$ready_file"
+    mkfifo -m 600 "$log_pipe"
+    /usr/bin/env -i PATH="/usr/bin:/bin" \
+        "$VENV_DIR/bin/python" "$GATEWAY_LOGGER" \
+        "$home/logs/gateway.log" "$log_pipe" "$RUN_SH_PID" &
+    local logger_pid=$!
+    GATEWAY_LOGGER_PIDS[$i]="$logger_pid"
+    GATEWAY_LOG_PIPES[$i]="$log_pipe"
+    GATEWAY_READY_FILES[$i]="$ready_file"
     (
         cd "$home"
         export HERMES_HOME="$home"
         export PATH="$VENV_DIR/bin:$BASE_PATH"
-        "$VENV_DIR/bin/hermes" gateway run 2>&1 | tee -a "$home/logs/gateway.log"
+        export HERMES_S6_SUPERVISED_CHILD="1"
+        export HERMES_ADDON_PROFILE_HOME="$home"
+        export HERMES_ADDON_MULTIPLEX_PROFILES="false"
+        export HERMES_ADDON_GATEWAY_NO_SUPERVISE="1"
+        export HERMES_ADDON_SUPERVISED_CHILD="1"
+        export HERMES_ADDON_API_HOST="127.0.0.1"
+        export HERMES_ADDON_API_PORT="$port"
+        export HERMES_ADDON_API_ENABLED="$ENABLE_API"
+        if [ "$ENABLE_API" = "true" ]; then
+            export HERMES_ADDON_API_KEY="$ACCESS_PASSWORD"
+        else
+            export HERMES_ADDON_API_KEY=""
+        fi
+        exec "$GATEWAY_CHILD" \
+            "$VENV_DIR/bin/python" \
+            "$GATEWAY_SUPERVISOR" \
+            "$GATEWAY_LAUNCHER" \
+            "$ready_file" \
+            "$RUN_SH_PID" \
+            > "$log_pipe" 2>&1
     ) &
-    local tee_pid=$!
-    sleep 0.5
-    # Find the matching gateway PID (cwd points to this profile's home)
-    local pid=""
-    for candidate in $(pgrep -f "hermes gateway run" 2>/dev/null | sort -n); do
-        local cwd
-        cwd=$(readlink "/proc/$candidate/cwd" 2>/dev/null || echo "")
-        if [ "$cwd" = "$home" ]; then
-            pid="$candidate"
+    local pid=$!
+    GATEWAY_PIDS[$i]="$pid"
+    local ready_pid=""
+    local ready=false
+    for _ in $(seq 1 100); do
+        if [ -f "$ready_file" ]; then
+            IFS= read -r ready_pid < "$ready_file" || true
+            if [ "$ready_pid" = "$pid" ]; then
+                ready=true
+                break
+            fi
+        fi
+        if ! kill -0 "$pid" 2>/dev/null; then
             break
         fi
+        sleep 0.05
     done
-    [ -z "$pid" ] && pid="$tee_pid"
-    GATEWAY_PIDS[$i]="$pid"
-    echo "[run] [$name] Gateway PID: $pid (tee: $tee_pid)"
+    if [ "$ready" != "true" ]; then
+        local startup_status
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" 2>/dev/null || true
+            local waited=0
+            while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 20 ]; do
+                sleep 0.1
+                waited=$((waited + 1))
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -KILL "$pid" 2>/dev/null || true
+            fi
+        fi
+        set +e
+        wait "$pid" 2>/dev/null
+        startup_status=$?
+        set -e
+        cleanup_gateway_logger "$i"
+        echo "[run] [$name] FATAL: gateway supervisor failed before readiness (code: $startup_status)" >&2
+        return 70
+    fi
+    echo "[run] [$name] Gateway PID: $pid (logger PID: $logger_pid)"
 }
 
 # Install the dedicated hermes startup wrapper (shared, sources .bashrc).
@@ -762,9 +896,155 @@ reload_nginx() {
 }
 
 # ── Section 11: Signal handling ──────────────────────────────────────
+gateway_group_alive() {
+    local pid="$1"
+    kill -0 -- "-$pid" 2>/dev/null
+}
+
+signal_gateway_tree() {
+    local pid="$1"
+    local signal="$2"
+    if gateway_group_alive "$pid"; then
+        kill -s "$signal" -- "-$pid" 2>/dev/null || true
+    elif kill -0 "$pid" 2>/dev/null; then
+        kill -s "$signal" "$pid" 2>/dev/null || true
+    fi
+}
+
+cleanup_gateway_descendants() {
+    local pid="$1"
+    if ! gateway_group_alive "$pid"; then
+        return
+    fi
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    local waited=0
+    while gateway_group_alive "$pid" && [ "$waited" -lt 20 ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    if gateway_group_alive "$pid"; then
+        kill -KILL -- "-$pid" 2>/dev/null || true
+    fi
+}
+
+stop_gateway_tree() {
+    local pid="$1"
+    local name="$2"
+    signal_gateway_tree "$pid" TERM
+    local waited=0
+    while { kill -0 "$pid" 2>/dev/null || gateway_group_alive "$pid"; } \
+        && [ "$waited" -lt 100 ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null || gateway_group_alive "$pid"; then
+        echo "[run] [$name] FATAL: gateway slot supervisor did not prove containment before timeout" >&2
+        return 70
+    fi
+    local supervisor_status
+    set +e
+    wait "$pid" 2>/dev/null
+    supervisor_status=$?
+    set -e
+    if [ "$supervisor_status" -ne 0 ]; then
+        echo "[run] [$name] FATAL: unsafe gateway supervisor exit: $supervisor_status" >&2
+        return "$supervisor_status"
+    fi
+    return 0
+}
+
+cleanup_gateway_logger() {
+    local i="$1"
+    local logger_pid="${GATEWAY_LOGGER_PIDS[$i]:-}"
+    local log_pipe="${GATEWAY_LOG_PIPES[$i]:-}"
+    local ready_file="${GATEWAY_READY_FILES[$i]:-}"
+    if [ -n "$logger_pid" ]; then
+        local waited=0
+        while kill -0 "$logger_pid" 2>/dev/null && [ "$waited" -lt 20 ]; do
+            sleep 0.1
+            waited=$((waited + 1))
+        done
+        if kill -0 "$logger_pid" 2>/dev/null; then
+            kill -TERM "$logger_pid" 2>/dev/null || true
+            waited=0
+            while kill -0 "$logger_pid" 2>/dev/null && [ "$waited" -lt 10 ]; do
+                sleep 0.1
+                waited=$((waited + 1))
+            done
+        fi
+        if kill -0 "$logger_pid" 2>/dev/null; then
+            kill -KILL "$logger_pid" 2>/dev/null || true
+        fi
+        wait "$logger_pid" 2>/dev/null || true
+    fi
+    if [ -n "$log_pipe" ]; then
+        rm -f -- "$log_pipe"
+    fi
+    if [ -n "$ready_file" ]; then
+        rm -f -- "$ready_file"
+    fi
+    unset 'GATEWAY_LOGGER_PIDS[i]' 'GATEWAY_LOG_PIPES[i]' 'GATEWAY_READY_FILES[i]'
+}
+
+SHUTDOWN_PENDING=false
+
+request_shutdown() {
+    SHUTDOWN_PENDING=true
+}
+
+start_gateway_signal_safe() {
+    # Bash runs traps between commands. Defer termination until the supervisor
+    # has published its post-reexec ready state or startup cleanup has finished.
+    local start_status
+    trap request_shutdown SIGTERM SIGINT
+    set +e
+    start_gateway_for_profile "$@"
+    start_status=$?
+    set -e
+    trap shutdown SIGTERM SIGINT
+    if [ "$SHUTDOWN_PENDING" = "true" ]; then
+        shutdown
+    fi
+    return "$start_status"
+}
+
+supervise_gateway_profile() {
+    local i="$1"
+    local pid="${GATEWAY_PIDS[$i]:-}"
+    local logger_pid="${GATEWAY_LOGGER_PIDS[$i]:-}"
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+        if [ -n "$pid" ]; then
+            set +e; wait "$pid" 2>/dev/null; EXIT_CODE=$?; set -e
+        else
+            EXIT_CODE=127
+        fi
+        cleanup_gateway_logger "$i"
+        if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "[run] [${PROFILE_NAMES[$i]}] FATAL: unsafe gateway supervisor exit: $EXIT_CODE" >&2
+            return "$EXIT_CODE"
+        fi
+        echo "[run] [${PROFILE_NAMES[$i]}] Gateway slot exited with containment proven; restarting in 3s..."
+        echo "[run] (Use the shutdown handler to stop the container.)"
+        sleep 3
+        start_gateway_signal_safe "$i"
+    elif [ -z "$logger_pid" ] || ! kill -0 "$logger_pid" 2>/dev/null; then
+        if [ -n "$logger_pid" ]; then
+            set +e; wait "$logger_pid" 2>/dev/null; LOGGER_EXIT_CODE=$?; set -e
+        else
+            LOGGER_EXIT_CODE=127
+        fi
+        echo "[run] [${PROFILE_NAMES[$i]}] Gateway logger exited (code: $LOGGER_EXIT_CODE); restarting gateway tree in 3s..."
+        stop_gateway_tree "$pid" "${PROFILE_NAMES[$i]}"
+        cleanup_gateway_logger "$i"
+        sleep 3
+        start_gateway_signal_safe "$i"
+    fi
+}
+
 shutdown() {
     echo ""
     echo "[run] Shutting down..."
+    local shutdown_status=0
     nginx -s quit 2>/dev/null || true
     echo "[run] nginx stopped"
     desktop_backend_stop
@@ -778,22 +1058,23 @@ shutdown() {
     echo "[run] ttyd + dashboards stopped"
     for i in "${!PROFILE_DIRS[@]}"; do
         local pid="${GATEWAY_PIDS[$i]:-}"
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill -TERM "$pid" 2>/dev/null || true
-            local waited=0
-            while kill -0 "$pid" 2>/dev/null && [ $waited -lt 10 ]; do
-                sleep 1
-                waited=$((waited + 1))
-            done
-            if kill -0 "$pid" 2>/dev/null; then
-                echo "[run] [${PROFILE_NAMES[$i]}] Gateway didn't stop gracefully, force killing..."
-                kill -9 "$pid" 2>/dev/null || true
+        if [ -n "$pid" ]; then
+            local gateway_status
+            set +e
+            stop_gateway_tree "$pid" "${PROFILE_NAMES[$i]}"
+            gateway_status=$?
+            set -e
+            if [ "$gateway_status" -ne 0 ]; then
+                shutdown_status="$gateway_status"
             fi
+        fi
+        cleanup_gateway_logger "$i"
+        if [ -n "$pid" ]; then
             echo "[run] [${PROFILE_NAMES[$i]}] Gateway stopped"
         fi
     done
     echo "[run] Shutdown complete"
-    exit 0
+    exit "$shutdown_status"
 }
 
 # Register signal handler BEFORE starting services
@@ -802,7 +1083,7 @@ trap shutdown SIGTERM SIGINT
 install_start_hermes_wrapper
 
 for i in "${!PROFILE_DIRS[@]}"; do
-    start_gateway_for_profile "$i"
+    start_gateway_signal_safe "$i"
     start_ttyd_for_profile "$i"
     start_dashboard_for_profile "$i"
 done
@@ -847,18 +1128,7 @@ echo "────────────────────────�
 while true; do
     desktop_backend_supervise
     for i in "${!PROFILE_DIRS[@]}"; do
-        pid="${GATEWAY_PIDS[$i]:-}"
-        if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-            set +e; wait "$pid" 2>/dev/null; EXIT_CODE=$?; set -e
-            if [ "$EXIT_CODE" -eq 0 ]; then
-                echo "[run] [${PROFILE_NAMES[$i]}] Gateway exited normally (code 0) — restarting in 3s..."
-                echo "[run] (Use the shutdown handler to stop the container.)"
-            else
-                echo "[run] [${PROFILE_NAMES[$i]}] Gateway exited unexpectedly (code: $EXIT_CODE), restarting in 3s..."
-            fi
-            sleep 3
-            start_gateway_for_profile "$i"
-        fi
+        supervise_gateway_profile "$i"
     done
     sleep 5
 done

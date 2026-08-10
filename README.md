@@ -42,16 +42,16 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
 | `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
 | `enable_terminal`     | `false`                                            | Enable web terminal on direct HTTP/HTTPS ports                                  |
-| `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server on direct HTTP/HTTPS ports              |
+| `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server; requires a non-placeholder access password of at least 16 safe ASCII characters |
 | `enable_desktop_backend` | `false`                                         | Enable the official Hermes Desktop remote backend on container port 9119        |
-| `access_password`     |                                                    | Password for HTTP/HTTPS, API, and Hermes Desktop access (username: `hermes`)    |
-| `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes .env variables — written to each profile's `.env` on each start          |
+| `access_password`     |                                                    | Password for HTTP/HTTPS, API, and Hermes Desktop access (username: `hermes`); enabled API keys use printable ASCII excluding single-quote, backslash, and dotenv interpolation syntax |
+| `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes `.env` variables; names must be shell-variable identifiers and values must be single-line |
 | `hermes_home`         | `.hermes`                                          | Single-profile mode: agent profile directory (relative to ~). Ignored if `profiles` is non-empty |
 | `profiles`            | `[]`                                               | Multi-profile mode: list of profile directories run concurrently. First entry is the primary |
 | `profiles_base`       | `.hermes/profiles`                                 | Default parent dir for non-dotted profile names. Entries starting with `.` are taken as-is (legacy `.hermes` keeps working). Set to empty to disable the prefix |
 | `profile_env_vars`    | `[]`                                               | Per-profile `.env` overrides: each entry is `{profile, name, value}` where `profile` matches a directory in `profiles` |
 
-API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or each profile's `.env` directly (full list, via terminal or `hermes setup`). Non-empty top-level `env_vars` are written to every profile's `.env` on each start, overriding existing entries. `profile_env_vars` entries layer on top of the top-level set for the profile whose directory matches `profile`.
+API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or each profile's `.env` directly (full list, via terminal or `hermes setup`). Environment names must be standard shell-variable identifiers, and configured values must not contain CR or LF. Non-empty top-level `env_vars` are written to every profile's `.env` on each start, overriding existing entries. Each `profile_env_vars.profile` must exactly match an entry in `profiles`; matching entries layer on top of the shared set.
 
 ### Running multiple profiles concurrently
 
@@ -79,6 +79,8 @@ The first entry is the **primary** — it keeps the existing root URLs (`/hermes
 **Upgrade note:** If you already used bare profile names with earlier multi-profile add-on versions, existing flat directories such as `/config/amy` are preserved automatically when the new `.hermes/profiles/amy` directory does not exist yet. To keep flat paths intentionally, set `profiles_base` to an empty string. To adopt the upstream-style layout, move the profile data to `/config/.hermes/profiles/<name>`.
 
 **Note:** Values added via `env_vars` are not removed or reset from `.env` when cleared or removed in the Home Assistant UI -- edit each profile's `.env` directly to remove them.
+
+**Gateway lifecycle:** The add-on owns every configured gateway slot and automatically restarts a slot whenever its process exits. Hermes CLI commands such as `hermes gateway stop` and `hermes gateway restart` target Hermes' native service-manager registrations, not these add-on-managed slots, and are therefore not supported as add-on lifecycle controls. Stop or restart the Home Assistant add-on through Supervisor instead.
 
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
 
@@ -122,7 +124,7 @@ The Desktop backend derives and pins Hermes' machine root from the primary `HERM
 
 Connect [Open WebUI](https://github.com/open-webui/open-webui), [SillyTavern](https://github.com/SillyTavern/SillyTavern), etc.
 
-OpenAI-compatible API access requires `enable_api` (**Enable API Server**) in the add-on configuration. The **Access Password** doubles as the server API key.
+OpenAI-compatible API access requires `enable_api` (**Enable API Server**) in the add-on configuration. The **Access Password** doubles as the server API key. Surrounding whitespace is ignored; the remaining value must contain at least 16 printable ASCII characters, cannot be a common placeholder value, and cannot contain single-quote or backslash characters or the dotenv interpolation sequence `${`. Line breaks are rejected before the value is written to profile `.env` files. Use it as the Bearer token for authenticated `/v1/*` requests.
 
 | URL / Endpoint                                                | Method | Description                                       |
 | ------------------------------------------------------------- | ------ | ------------------------------------------------- |
@@ -131,7 +133,9 @@ OpenAI-compatible API access requires `enable_api` (**Enable API Server**) in th
 | `https://homeassistant.local:8443/v1/responses/{response_id}` | GET    | Retrieve a stored response                        |
 | `https://homeassistant.local:8443/v1/responses/{response_id}` | DELETE | Delete a stored response                          |
 | `https://homeassistant.local:8443/v1/models`                  | GET    | List available models                             |
-| `https://homeassistant.local:8443/health`                     | GET    | Health check                                      |
+| `https://homeassistant.local:8443/v1/health`                  | GET    | Public Hermes API liveness check                |
+
+`/health` is nginx's unauthenticated root liveness response. `/v1/health` is also unauthenticated and confirms that the Hermes API listener is responding. Neither endpoint validates the Bearer key; use an authenticated endpoint such as `/v1/models` for that.
 
 ### Ports
 
@@ -191,7 +195,8 @@ Authentication layers differ by access path:
 - **Direct HTTP/HTTPS Ports** (8080/8443): two-layer auth protects the web UIs.
   1. **Basic Auth** (username `hermes`, password = `access_password`) gates the landing page, Terminal, and Dashboard HTML.
   2. **Session Token** (ephemeral, rotates on every add-on restart) gates dashboard API calls. The token is injected into the dashboard HTML on load — only clients who successfully loaded the page via Basic Auth ever see it. Requests to `/dashboard/api/*` without a matching Bearer token return 401. Only `/dashboard/api/status` is public (it mirrors Hermes' own whitelist and powers the landing page health indicator). If the dashboard process is restarted without restarting the add-on, the nginx-side token cache goes stale — restart the add-on to re-sync.
-- **OpenAI-compatible API** (`/v1/*`): Bearer token authentication. The `access_password` doubles as the API key, passed as `Authorization: Bearer <api-key>`.
+- **OpenAI-compatible API** (`/v1/*` except `/v1/health`): Bearer token authentication. The `access_password` doubles as the API key and is sent in the standard Authorization header. `/v1/health` is public liveness and sends no credential; use `/v1/models` to verify authentication.
+- **Gateway configuration authority**: the gateway launcher preserves Hermes' normal profile, external-secret, and managed-environment reloads, then reasserts the add-on-owned profile home, disabled multiplex setting, foreground-supervision controls, and `API_SERVER_HOST`, `API_SERVER_PORT`, `API_SERVER_ENABLED`, and `API_SERVER_KEY` values after every load. At the final gateway-config boundary it again disables Hermes profile multiplexing and either removes the API platform or enables it with the add-on-owned host, port, and key. Each add-on-managed gateway slot also masks a sticky interactive `active_profile` selection independently of the installed Hermes revision; runtimes with native supervised-child support receive that signal as defense in depth. The add-on supervises each gateway through a per-slot subreaper/process-group leader and a separate environment-empty, fail-fast logger child. The long-lived slot supervisor clean-reexecs with only non-secret locale/path state and passes the complete original gateway environment to the child through an anonymous unlinked file descriptor. The supervisor and logger bind themselves to the original `run.sh` parent; TERM/INT remain blocked across the clean reexec until the post-reexec handlers and parent check are active, and `run.sh` does not treat slot startup as complete until that ready handshake succeeds. A durable log-file open or write error terminates that logger and triggers a controlled restart. The slot supervisor adopts session-detached background subprocesses, applies bounded TERM/KILL cleanup, and reaps them before reporting clean containment. It logs the gateway's actual exit status, returns success only after the owned descendant set is empty, and makes an unsafe or unproven supervisor exit container-fatal instead of starting an overlapping replacement, so PID ownership, descendants, log draining, restart, and shutdown remain explicitly owned by the add-on.
 - **Hermes Desktop backend** (`:9119` when enabled and mapped): Hermes Basic-auth login using username `hermes` and `access_password`. This endpoint exposes the full Desktop backend contract, including chat, WebSockets, PTY, events, profiles, and agent control. It is disabled and unmapped by default. Enabling it is an explicit risk decision; keep it on a trusted LAN/VPN/Tailscale path and do not expose it directly to the internet.
 
 If you expose direct ports to the internet, place a network-perimeter gate (firewall, VPN, reverse proxy with stronger auth) in front — Basic Auth alone is not brute-force resistant.

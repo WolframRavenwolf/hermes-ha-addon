@@ -6,6 +6,38 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-31
+
+### Fixed
+
+- Fail startup before nginx or Hermes services start when `enable_api` has no usable `access_password`.
+- Read `access_password` losslessly from Supervisor JSON so trailing line breaks reach validation instead of being stripped by shell command substitution, and reject NUL before assigning it to a shell variable.
+- Keep all four add-on-owned `API_SERVER_*` variables authoritative across shared and per-profile environment overrides, including stale canonical and `export` aliases from earlier `.env` files.
+- Reassert add-on-owned API settings after Hermes loads profile, external-secret, and managed environment sources.
+- Enforce enabled and disabled API settings on the final Hermes `GatewayConfig`, so stale profile or managed YAML cannot retain or replace the API listener.
+- Keep Hermes' supported live provider-credential reloads while reasserting only add-on-owned slot identity, multiplex, foreground-supervision, and API values after each load.
+- Pin every add-on-managed gateway process to its assigned profile independently of native supervised-child support, so a sticky interactive `active_profile` in an older persisted Hermes checkout cannot redirect the primary gateway or duplicate a worker.
+- Protect each slot's assigned `HERMES_HOME` across profile, external-secret, and managed environment loads.
+- Disable Hermes profile multiplexing in profile environment files, before the named-profile startup preflight, and in the final gateway config so only the add-on's explicit gateway slot owns each profile.
+- Protect `HERMES_GATEWAY_NO_SUPERVISE=1` and `HERMES_S6_SUPERVISED_CHILD=1` against late profile, external-secret, and managed environment overrides so Hermes cannot redirect the tracked foreground child back into upstream s6 supervision.
+- Run each gateway under a separately tracked per-slot subreaper/process-group supervisor and duplicate output through a separately tracked, fail-fast Python logger connected by a private FIFO. Clean-reexec the long-lived supervisor with only non-secret locale/path state while handing the complete original gateway environment through an anonymous unlinked file descriptor to the gateway child. Pass the original `run.sh` PID to both children, arm Linux parent-death handling before long-lived work, block TERM/INT across the supervisor reexec, and publish slot readiness only after the post-reexec parent check and handlers are active. Sanitize the logger environment before its blocking FIFO open, exit immediately on a durable log-file open or write failure, defer shutdown until readiness or startup cleanup, and treat logger or sink failure as a profile failure. Restart and shutdown now TERM/KILL same-group and session-detached descendants, reap adopted orphans, bound logger drain time, reap both direct children, and remove FIFO/readiness state before propagating any unsafe exit. A clean supervisor logs the gateway's actual status and returns success only after its owned descendant set is empty; an unsafe or unproven supervisor exit is container-fatal and never starts an overlapping slot replacement.
+- Document that add-on-managed gateway slots are controlled through Home Assistant Supervisor rather than Hermes' native `gateway stop` or `gateway restart` service-manager commands.
+- Reject malformed or unknown `profile_env_vars.profile` targets instead of silently retaining stale per-profile values.
+- Correct API health guidance: `/v1/health` is public Hermes liveness, while `/v1/models` verifies Bearer authentication.
+
+### Security
+
+- Require enabled API credentials to contain at least 16 printable ASCII characters after trimming; reject Hermes' known placeholders, single-quote and backslash characters, dotenv interpolation syntax, controls, and non-ASCII input.
+- Serialize enabled credentials as single-quoted literals that round-trip identically through Bash and python-dotenv; keep `API_SERVER_KEY` empty when the API is disabled.
+- Keep rejected values out of startup errors, reject line breaks before dotenv serialization, and reject malformed or multiline `env_vars` and `profile_env_vars` records.
+
+### Verified
+
+- `PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -B -m unittest discover -s tests -q` - 108 tests OK, 2 skipped.
+- Shell syntax for every shipped `hermes_agent/*.sh` file, YAML parsing, and `git diff --check` passed.
+- Differential comparison with Hermes' authoritative `has_usable_secret(..., min_length=16)` predicate matched all 30 credential cases in the supported single-line matrix; 2 CR/LF serialization-hardening cases were separately rejected.
+- Complex safe credentials round-tripped byte-for-byte through both Bash and Hermes' production python-dotenv parser.
+
 ## [1.3.0] - 2026-07-19
 
 ### Added

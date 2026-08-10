@@ -36,7 +36,9 @@ configuration:
     name: Enable API Server
     description: >-
       ⚠️ Enable the OpenAI-compatible API server on direct HTTP/HTTPS ports (configured under Network below).
-      The access password doubles as the server API key.
+      The access password doubles as the server API key. Surrounding whitespace is ignored;
+      the remaining value must contain at least 16 printable ASCII characters. Common placeholder
+      values, single-quote and backslash characters, dotenv interpolation syntax, and line breaks are rejected.
   enable_desktop_backend:
     name: Enable Hermes Desktop Backend
     description: >-
@@ -47,11 +49,15 @@ configuration:
     name: Access Password
     description: >-
       ⚠️ Password for direct HTTP/HTTPS access. Username: hermes.
-      Also used as the server API key and Hermes Desktop password.
+      Also used as the server API key and Hermes Desktop password. Line breaks are rejected in every mode.
+      When the API server is enabled, surrounding whitespace is ignored and the remaining value must
+      contain at least 16 printable ASCII characters, cannot be a common placeholder, and cannot
+      contain a single-quote or backslash character or dotenv interpolation syntax.
   env_vars:
     name: Hermes .env Variables
     description: >-
       Written to each resolved profile's .env on each start.
+      Names must be standard shell-variable identifiers and values must be single-line.
       Use for API keys (e.g. OPENROUTER_API_KEY).
       Non-empty values override existing .env entries.
   hermes_home:

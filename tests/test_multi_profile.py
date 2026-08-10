@@ -324,10 +324,23 @@ class EnvMergeTests(unittest.TestCase):
         self.assertEqual(env_off.get("API_SERVER_ENABLED"), "false")
         self.assertEqual(env_on.get("API_SERVER_ENABLED"), "true")
 
-    def test_api_server_key_set_with_password(self):
+    def test_api_server_key_set_only_when_api_is_enabled(self):
         options = {"profiles": [".hermes"]}
-        env_with, _ = _run_env_merge(options, 0, access_password="secret123")
-        self.assertEqual(env_with.get("API_SERVER_KEY"), "secret123")
+        password = "0123456789abcdef"
+        env_with, _ = _run_env_merge(
+            options,
+            0,
+            enable_api="true",
+            access_password=password,
+        )
+        env_off, _ = _run_env_merge(
+            options,
+            0,
+            enable_api="false",
+            access_password=password,
+        )
+        self.assertEqual(env_with.get("API_SERVER_KEY"), f"'{password}'")
+        self.assertEqual(env_off.get("API_SERVER_KEY"), "")
 
     def test_env_value_with_sed_special_chars_survives_upsert(self):
         """Values containing &, |, and backslash must round-trip through upsert_env_var.

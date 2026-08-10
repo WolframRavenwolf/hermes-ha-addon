@@ -77,6 +77,11 @@ RUN su - linuxbrew -c \
 
 # ── Addon files ──────────────────────────────────────────────────────
 COPY run.sh /
+COPY api-server.sh /usr/local/lib/hermes-api-server.sh
+COPY gateway-launcher.py /usr/local/lib/hermes-gateway-launcher.py
+COPY gateway-child.sh /usr/local/lib/hermes-gateway-child.sh
+COPY gateway-supervisor.py /usr/local/lib/hermes-gateway-supervisor.py
+COPY gateway-logger.py /usr/local/lib/hermes-gateway-logger.py
 COPY nginx-render.sh /usr/local/lib/hermes-nginx-render.sh
 COPY profile-init.sh /usr/local/lib/hermes-profile-init.sh
 COPY desktop-backend.sh /usr/local/lib/hermes-desktop-backend.sh
@@ -87,7 +92,7 @@ COPY landing.html.tpl /var/www/landing.html.tpl
 COPY loading.html /var/www/loading.html
 COPY brew-wrapper.sh /usr/local/bin/brew-wrapper
 COPY dashboard-patches.py /usr/local/bin/hermes-dashboard-patches
-RUN chmod +x /run.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches /usr/local/bin/hermes-desktop-backend
+RUN chmod +x /run.sh /usr/local/bin/brew-wrapper /usr/local/bin/hermes-dashboard-patches /usr/local/bin/hermes-desktop-backend /usr/local/lib/hermes-gateway-child.sh
 
 # ── nginx dirs ───────────────────────────────────────────────────────
 RUN mkdir -p /var/www /var/log/nginx /run/nginx

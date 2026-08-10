@@ -24,6 +24,9 @@
 
 # Env vars the add-on owns; users cannot override these via env_vars / profile env_vars.
 RESERVED_VARS="HERMES_HOME|HASS_TOKEN|HASS_URL|GITHUB_TOKEN|API_SERVER_PORT|API_SERVER_HOST"
+RESERVED_VARS="${RESERVED_VARS}|API_SERVER_ENABLED|API_SERVER_KEY"
+RESERVED_VARS="${RESERVED_VARS}|GATEWAY_MULTIPLEX_PROFILES|HERMES_S6_SUPERVISED_CHILD"
+RESERVED_VARS="${RESERVED_VARS}|HERMES_GATEWAY_NO_SUPERVISE"
 
 API_BASE_PORT=8642
 TTYD_HERMES_BASE_PORT=49269
@@ -150,6 +153,23 @@ upsert_env_var() {
   fi
 }
 
+# Remove canonical and `export KEY=...` aliases, then append one owned value.
+set_owned_env_var() {
+  local env_file="$1" key="$2" value="$3"
+  _sed_inplace "$env_file" \
+    -e "/^[[:space:]]*${key}[[:space:]]*=/d" \
+    -e "/^[[:space:]]*export[[:space:]][[:space:]]*${key}[[:space:]]*=/d"
+  printf '%s=%s\n' "$key" "$value" >>"$env_file"
+}
+
+# Remove canonical and `export KEY=...` aliases without persisting a value.
+remove_env_var() {
+  local env_file="$1" key="$2"
+  _sed_inplace "$env_file" \
+    -e "/^[[:space:]]*${key}[[:space:]]*=/d" \
+    -e "/^[[:space:]]*export[[:space:]][[:space:]]*${key}[[:space:]]*=/d"
+}
+
 # Apply the merged env_vars (top-level + per-profile overrides + add-on-owned vars)
 # into a single profile's .env file.
 #
@@ -197,17 +217,21 @@ apply_env_vars_for_profile() {
     done <<<"$overrides"
   fi
 
-  # Per-profile API server binding (always owned by the add-on)
-  upsert_env_var "$env_file" "API_SERVER_HOST" "127.0.0.1"
-  upsert_env_var "$env_file" "API_SERVER_PORT" "${API_PORTS[$i]}"
+  # Per-profile API server values are always owned by the add-on and appended
+  # after user variables so stale aliases cannot override them.
+  set_owned_env_var "$env_file" "API_SERVER_HOST" "127.0.0.1"
+  set_owned_env_var "$env_file" "API_SERVER_PORT" "${API_PORTS[$i]}"
+  set_owned_env_var "$env_file" "API_SERVER_ENABLED" "$ENABLE_API"
+  set_owned_env_var "$env_file" "GATEWAY_MULTIPLEX_PROFILES" "false"
+  remove_env_var "$env_file" "HERMES_S6_SUPERVISED_CHILD"
+  remove_env_var "$env_file" "HERMES_HOME"
+  remove_env_var "$env_file" "HERMES_GATEWAY_NO_SUPERVISE"
 
-  # API server enabled/disabled (shared)
-  upsert_env_var "$env_file" "API_SERVER_ENABLED" "$ENABLE_API"
-
-  # Optional shared API key
-  if [ -n "$ACCESS_PASSWORD" ]; then
-    upsert_env_var "$env_file" "API_SERVER_KEY" "$ACCESS_PASSWORD"
-  elif grep -q "^API_SERVER_KEY=" "$env_file"; then
-    _sed_inplace "$env_file" "s|^API_SERVER_KEY=.*|API_SERVER_KEY=|"
+  # Enabled credentials have already passed the safe-literal grammar. Single
+  # quotes preserve the same bytes for Bash and python-dotenv without expansion.
+  if [ "$ENABLE_API" = "true" ] && [ -n "$ACCESS_PASSWORD" ]; then
+    set_owned_env_var "$env_file" "API_SERVER_KEY" "'$ACCESS_PASSWORD'"
+  else
+    set_owned_env_var "$env_file" "API_SERVER_KEY" ""
   fi
 }
