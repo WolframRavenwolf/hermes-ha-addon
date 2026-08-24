@@ -6,6 +6,11 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+### Fixed
+
+- Reduce Linux gateway-supervisor process-tree snapshots from 20 per second to one every two seconds while preserving 50 ms exit and signal responsiveness, immediate cleanup scans, and the existing non-Linux containment behavior.
+- Publish add-on launcher processes with the recognized `hermes-gateway` command identity so Hermes Dashboard liveness correctly reports s6-supervised gateways as running.
+
 ## [1.3.1] - 2026-07-31
 
 ### Fixed

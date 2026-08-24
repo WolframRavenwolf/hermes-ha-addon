@@ -11,6 +11,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -319,6 +320,113 @@ class DashboardIngressPatchTests(unittest.TestCase):
         self.assertIn("/usr/local/lib/hermes-gateway-child.sh", dockerfile)
         self.assertIn("/usr/local/lib/hermes-gateway-supervisor.py", dockerfile)
         self.assertIn("/usr/local/lib/hermes-gateway-logger.py", dockerfile)
+
+    def test_gateway_supervisor_throttles_expensive_descendant_scans(self) -> None:
+        namespace = runpy.run_path(
+            str(GATEWAY_SUPERVISOR), run_name="gateway_supervisor_test"
+        )
+        supervise = namespace["supervise"]
+        function_globals = supervise.__globals__
+        clock = [0.0]
+        snapshots = 0
+
+        class FakeGateway:
+            pid = 4321
+
+            def __init__(self) -> None:
+                self.poll_count = 0
+
+            def poll(self) -> int | None:
+                self.poll_count += 1
+                return None if self.poll_count <= 50 else 0
+
+            def wait(self) -> int:
+                return 0
+
+        gateway = FakeGateway()
+
+        def process_parents() -> dict[int, int]:
+            nonlocal snapshots
+            snapshots += 1
+            return {}
+
+        def sleep(seconds: float) -> None:
+            clock[0] += seconds
+
+        with (
+            mock.patch.dict(
+                function_globals,
+                {
+                    "_process_parents": process_parents,
+                    "_cleanup_owned_descendants": lambda _known: None,
+                    "_stop_signal": None,
+                },
+            ),
+            mock.patch.object(
+                function_globals["sys"], "platform", "linux"
+            ),
+            mock.patch.object(
+                function_globals["subprocess"], "Popen", return_value=gateway
+            ),
+            mock.patch.object(
+                function_globals["time"], "monotonic", side_effect=lambda: clock[0]
+            ),
+            mock.patch.object(function_globals["time"], "sleep", side_effect=sleep),
+        ):
+            result = supervise(
+                "/venv/bin/python",
+                "/usr/local/lib/hermes-gateway-launcher.py",
+                {},
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(gateway.poll_count, 51)
+        self.assertLessEqual(snapshots, 2)
+
+    def test_gateway_supervisor_publishes_recognizable_gateway_argv0(self) -> None:
+        namespace = runpy.run_path(
+            str(GATEWAY_SUPERVISOR), run_name="gateway_supervisor_test"
+        )
+        supervise = namespace["supervise"]
+        function_globals = supervise.__globals__
+
+        class ExitedGateway:
+            pid = 4321
+
+            def poll(self) -> int:
+                return 0
+
+            def wait(self) -> int:
+                return 0
+
+        with (
+            mock.patch.object(
+                function_globals["subprocess"],
+                "Popen",
+                return_value=ExitedGateway(),
+            ) as popen,
+            mock.patch.dict(
+                function_globals,
+                {"_cleanup_owned_descendants": lambda _known: None},
+            ),
+        ):
+            supervise(
+                "/venv/bin/python",
+                "/usr/local/lib/hermes-gateway-launcher.py",
+                {},
+            )
+
+        positional, keyword = popen.call_args
+        self.assertEqual(
+            positional[0],
+            [
+                "hermes-gateway",
+                "/usr/local/lib/hermes-gateway-launcher.py",
+                "gateway",
+                "run",
+            ],
+        )
+        self.assertEqual(keyword["executable"], "/venv/bin/python")
 
     def test_gateway_spawn_defers_shutdown_until_ownership_is_published(self) -> None:
         run_text = RUN_SH.read_text()

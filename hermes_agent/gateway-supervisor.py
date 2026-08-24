@@ -14,6 +14,7 @@ import tempfile
 import time
 
 _POLL_SECONDS = 0.05
+_DESCENDANT_SCAN_SECONDS = 2.0
 _GATEWAY_GRACE_SECONDS = 5.0
 _DESCENDANT_GRACE_SECONDS = 2.0
 _PR_SET_PDEATHSIG = 1
@@ -233,7 +234,8 @@ def supervise(
 ) -> int:
     """Run one gateway and return only after all of its descendants are gone."""
     gateway = subprocess.Popen(
-        [python_path, launcher, "gateway", "run"],
+        ["hermes-gateway", launcher, "gateway", "run"],
+        executable=python_path,
         close_fds=True,
         env=gateway_environment,
     )
@@ -241,12 +243,19 @@ def supervise(
     known: set[int] = {gateway.pid}
     stop_forwarded = False
     stop_deadline: float | None = None
+    next_descendant_scan = 0.0
+    descendant_scan_seconds = (
+        _DESCENDANT_SCAN_SECONDS if sys.platform == "linux" else _POLL_SECONDS
+    )
 
     while gateway.poll() is None:
-        parents = _process_parents()
-        known.update(_descendants(gateway.pid, parents))
-        known.update(_descendants(os.getpid(), parents))
-        known.discard(os.getpid())
+        now = time.monotonic()
+        if now >= next_descendant_scan:
+            parents = _process_parents()
+            known.update(_descendants(gateway.pid, parents))
+            known.update(_descendants(os.getpid(), parents))
+            known.discard(os.getpid())
+            next_descendant_scan = now + descendant_scan_seconds
 
         if _stop_signal is not None and not stop_forwarded:
             try:
