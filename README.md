@@ -226,6 +226,12 @@ The Hermes tab uses a dedicated `start-hermes` wrapper (sources .bashrc, starts 
 
 Inside the add-on container, `~` is `/config`. That path is the add-on's private `addon_config` mount, not the normal Home Assistant Core `/config` folder. It survives add-on updates and is included in Home Assistant backups.
 
+### Home Assistant backups
+
+Home Assistant backups exclude only rebuildable Hermes runtime dependencies and caches: the shared Python venv, project and dashboard `node_modules`, each profile's LSP `node_modules`, `.cache`, and `.npm`. The shared runtime dependencies are regenerated during startup, while caches repopulate when needed. LSP packages are reinstalled automatically on first LSP use when auto-install is enabled; with a manual install strategy, run `hermes lsp install <server-id>`. The first start or first LSP use after a restore can therefore be slower and network-dependent while dependencies are downloaded again.
+
+Canonical source and profile state remain backed up, including local source changes, configuration, credentials, state databases, sessions, memories, skills, plugins, and secrets. User-managed tools and browser profiles/login state also remain backed up, including Homebrew, global npm, Go, Bun, certificates, and shell configuration.
+
 From the HAOS host or Samba, look for the `addon_configs` share/folder. The host-side path usually looks like this:
 
 ```text

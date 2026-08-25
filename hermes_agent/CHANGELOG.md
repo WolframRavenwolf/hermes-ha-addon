@@ -6,6 +6,10 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+### Changed
+
+- Reduce backup size by excluding only regenerated shared venv, project/dashboard dependencies, profile LSP dependencies, and `.cache`/`.npm` caches. The first start or first LSP use after a restore can be slower and network-dependent; canonical state, user-managed tools, and browser profiles/login state remain backed up.
+
 ### Fixed
 
 - Reduce Linux gateway-supervisor process-tree snapshots from 20 per second to one every two seconds while preserving 50 ms exit and signal responsiveness, immediate cleanup scans, and the existing non-Linux containment behavior.

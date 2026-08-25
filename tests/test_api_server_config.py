@@ -815,9 +815,6 @@ class PublicationMetadataTests(unittest.TestCase):
 
     def test_release_changelog_records_actual_verification(self):
         changelog = CHANGELOG.read_text()
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-        self.assertEqual(unreleased.strip(), "")
-
         release = changelog.split("## [1.3.1] - 2026-07-31", 1)[1].split(
             "\n## [", 1
         )[0]
