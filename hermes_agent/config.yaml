@@ -14,6 +14,16 @@ ingress_port: 49169
 ingress_stream: true
 panel_icon: mdi:robot
 panel_title: Hermes Agent
+backup_exclude:
+  - .hermes/hermes-agent/venv
+  - .hermes/hermes-agent/node_modules
+  - .hermes/hermes-agent/web/node_modules
+  - lsp/bin
+  - lsp/node_modules
+  - lsp/python-packages
+  - lsp/pses
+  - .cache
+  - .npm
 map:
   - addon_config:rw
   - media:rw

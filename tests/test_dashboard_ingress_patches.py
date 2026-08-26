@@ -383,7 +383,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
         self.assertEqual(gateway.poll_count, 51)
         self.assertLessEqual(snapshots, 2)
 
-    def test_gateway_supervisor_publishes_recognizable_gateway_argv0(self) -> None:
+    def test_gateway_supervisor_uses_recognizable_venv_executable(self) -> None:
         namespace = runpy.run_path(
             str(GATEWAY_SUPERVISOR), run_name="gateway_supervisor_test"
         )
@@ -411,7 +411,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
             ),
         ):
             supervise(
-                "/venv/bin/python",
+                "/venv/bin/hermes-gateway",
                 "/usr/local/lib/hermes-gateway-launcher.py",
                 {},
             )
@@ -420,13 +420,18 @@ class DashboardIngressPatchTests(unittest.TestCase):
         self.assertEqual(
             positional[0],
             [
-                "hermes-gateway",
+                "/venv/bin/hermes-gateway",
                 "/usr/local/lib/hermes-gateway-launcher.py",
                 "gateway",
                 "run",
             ],
         )
-        self.assertEqual(keyword["executable"], "/venv/bin/python")
+        self.assertNotIn("executable", keyword)
+
+    def test_run_creates_recognizable_gateway_link_inside_venv(self) -> None:
+        run_text = RUN_SH.read_text()
+        self.assertIn('GATEWAY_PYTHON="$VENV_DIR/bin/hermes-gateway"', run_text)
+        self.assertIn('ln -snf python "$GATEWAY_PYTHON"', run_text)
 
     def test_gateway_spawn_defers_shutdown_until_ownership_is_published(self) -> None:
         run_text = RUN_SH.read_text()
