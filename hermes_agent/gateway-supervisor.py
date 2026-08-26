@@ -234,7 +234,13 @@ def supervise(
 ) -> int:
     """Run one gateway and return only after all of its descendants are gone."""
     gateway = subprocess.Popen(
-        [python_path, launcher, "gateway", "run"],
+        [
+            python_path,
+            launcher,
+            "gateway",
+            "run",
+            "--external-supervisor",
+        ],
         close_fds=True,
         env=gateway_environment,
     )
@@ -288,15 +294,14 @@ def main() -> int:
     if not resumed:
         signal.pthread_sigmask(signal.SIG_BLOCK, _BOOTSTRAP_SIGNALS)
         initial_arguments = sys.argv[1:]
-        if len(initial_arguments) != 4:
+        if len(initial_arguments) != 3:
             print(
-                "gateway-supervisor.py: expected PYTHON LAUNCHER READY_PATH "
-                "PARENT_PID",
+                "gateway-supervisor.py: expected LAUNCHER READY_PATH PARENT_PID",
                 file=sys.stderr,
             )
             return 64
         try:
-            expected_parent_pid = int(initial_arguments[3])
+            expected_parent_pid = int(initial_arguments[2])
             if os.getpgrp() != os.getpid():
                 os.setsid()
             _set_linux_process_contract(expected_parent_pid)
@@ -308,11 +313,12 @@ def main() -> int:
 
     try:
         gateway_environment, arguments = _load_gateway_environment()
-        if len(arguments) != 4:
+        if len(arguments) != 3:
             raise RuntimeError(
-                "expected PYTHON LAUNCHER READY_PATH PARENT_PID after re-exec"
+                "expected LAUNCHER READY_PATH PARENT_PID after re-exec"
             )
-        python_path, launcher, ready_path, parent_pid_text = arguments
+        launcher, ready_path, parent_pid_text = arguments
+        gateway_executable = str(Path(sys.executable).with_name("hermes-gateway"))
         expected_parent_pid = int(parent_pid_text)
         _set_linux_process_contract(expected_parent_pid)
         signal.pthread_sigmask(signal.SIG_UNBLOCK, _BOOTSTRAP_SIGNALS)
@@ -321,7 +327,7 @@ def main() -> int:
         _publish_ready(ready_path)
         if _stop_signal is not None:
             return 0
-        return supervise(python_path, launcher, gateway_environment)
+        return supervise(gateway_executable, launcher, gateway_environment)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         print(f"gateway-supervisor: {error}", file=sys.stderr, flush=True)
         return 70

@@ -15,6 +15,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Reduce Linux gateway-supervisor process-tree snapshots from 20 per second to one every two seconds while preserving 50 ms exit and signal responsiveness, immediate cleanup scans, and the existing non-Linux containment behavior.
 - Publish add-on launcher processes with the recognized `hermes-gateway` command identity so Hermes Dashboard liveness correctly reports s6-supervised gateways as running.
 - Preserve Linux virtualenv discovery while publishing that identity by starting a venv-local `hermes-gateway` interpreter symlink directly; this prevents startup from losing installed packages such as `hermes_cli`.
+- Keep the per-slot supervisor out of Hermes gateway process discovery by running it through ordinary venv Python and deriving the recognizable `hermes-gateway` alias only for the final child; status and update flows no longer treat the supervisor as an extra manual gateway, and updates hand the runtime back to the slot supervisor instead of launching a detached restart watcher.
 
 ## [1.3.1] - 2026-07-31
 

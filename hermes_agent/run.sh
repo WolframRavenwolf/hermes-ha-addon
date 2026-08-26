@@ -751,7 +751,7 @@ start_gateway_for_profile() {
             export HERMES_ADDON_API_KEY=""
         fi
         exec "$GATEWAY_CHILD" \
-            "$GATEWAY_PYTHON" \
+            "$VENV_DIR/bin/python" \
             "$GATEWAY_SUPERVISOR" \
             "$GATEWAY_LAUNCHER" \
             "$ready_file" \
