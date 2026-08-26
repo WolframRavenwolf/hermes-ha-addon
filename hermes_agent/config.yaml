@@ -18,7 +18,10 @@ backup_exclude:
   - .hermes/hermes-agent/venv
   - .hermes/hermes-agent/node_modules
   - .hermes/hermes-agent/web/node_modules
+  - lsp/bin
   - lsp/node_modules
+  - lsp/python-packages
+  - lsp/pses
   - .cache
   - .npm
 map:

@@ -25,7 +25,10 @@ EXPECTED_BACKUP_EXCLUDE = [
     ".hermes/hermes-agent/venv",
     ".hermes/hermes-agent/node_modules",
     ".hermes/hermes-agent/web/node_modules",
+    "lsp/bin",
     "lsp/node_modules",
+    "lsp/python-packages",
+    "lsp/pses",
     ".cache",
     ".npm",
 ]
@@ -69,8 +72,16 @@ class BackupManifestTests(unittest.TestCase):
                 "/config/.hermes/hermes-agent/web/node_modules/vite/bin/vite.js"
             ),
             "default profile LSP": "/config/.hermes/lsp/node_modules/typescript/lib/tsserver.js",
+            "default profile LSP wrapper": "/config/.hermes/lsp/bin/pyright-langserver",
+            "default profile Python LSP package": (
+                "/config/.hermes/lsp/python-packages/pylsp/__init__.py"
+            ),
+            "default profile LSP scratch": "/config/.hermes/lsp/pses/pses.log",
             "named profile LSP": (
                 "/config/.hermes/profiles/amy/lsp/node_modules/typescript/lib/tsserver.js"
+            ),
+            "named profile LSP wrapper": (
+                "/config/.hermes/profiles/amy/lsp/bin/pyright-langserver"
             ),
             "custom-base profile LSP": (
                 "/config/custom/profiles/research/lsp/node_modules/typescript/lib/tsserver.js"
@@ -92,6 +103,7 @@ class BackupManifestTests(unittest.TestCase):
         patterns = _manifest().get("backup_exclude", ())
         retained_paths = {
             "source": "/config/.hermes/hermes-agent/hermes_cli/main.py",
+            "Hermes LSP source": "/config/.hermes/hermes-agent/agent/lsp/manager.py",
             "source git": "/config/.hermes/hermes-agent/.git/objects/aa/object",
             "profile config": "/config/.hermes/config.yaml",
             "profile environment": "/config/.hermes/.env",
@@ -106,6 +118,8 @@ class BackupManifestTests(unittest.TestCase):
             "global npm": (
                 "/config/.npm-global/lib/node_modules/typescript/lib/tsserver.js"
             ),
+            "external user-managed LSP": "/config/.local/bin/pyright-langserver",
+            "user directory named LSP": "/config/projects/lsp/README.md",
             "go": "/config/.go/pkg/mod/example.org/tool/source.go",
             "bun": "/config/.bun/install/cache/tool/package.json",
             "Camofox login state": (
@@ -198,6 +212,7 @@ class BackupDocumentationTests(unittest.TestCase):
             "slower",
             "network",
             "first lsp use",
+            "lsp runtimes",
             "hermes lsp install",
             "user-managed tools",
             "login state",
@@ -205,6 +220,7 @@ class BackupDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, backup_section)
+        self.assertNotIn("lsp `node_modules`", backup_section)
         self.assertNotIn(
             "excluded paths are regenerated during startup",
             backup_section,

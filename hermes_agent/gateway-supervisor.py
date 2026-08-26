@@ -234,8 +234,7 @@ def supervise(
 ) -> int:
     """Run one gateway and return only after all of its descendants are gone."""
     gateway = subprocess.Popen(
-        ["hermes-gateway", launcher, "gateway", "run"],
-        executable=python_path,
+        [python_path, launcher, "gateway", "run"],
         close_fds=True,
         env=gateway_environment,
     )
