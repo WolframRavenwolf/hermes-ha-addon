@@ -226,9 +226,9 @@ class BackupDocumentationTests(unittest.TestCase):
             backup_section,
         )
 
-    def test_changelog_records_backup_reconstruction_and_retention(self):
-        unreleased = CHANGELOG.read_text().split("## [Unreleased]", 1)[1]
-        unreleased = unreleased.split("\n## [", 1)[0].lower()
+    def test_v1_3_2_changelog_records_backup_reconstruction_and_retention(self):
+        release = CHANGELOG.read_text().split("## [1.3.2] - 2026-08-27", 1)[1]
+        release = release.split("\n## [", 1)[0].lower()
         for phrase in (
             "regenerated",
             "slower",
@@ -239,7 +239,7 @@ class BackupDocumentationTests(unittest.TestCase):
             "remain backed up",
         ):
             with self.subTest(phrase=phrase):
-                self.assertIn(phrase, unreleased)
+                self.assertIn(phrase, release)
 
 
 if __name__ == "__main__":

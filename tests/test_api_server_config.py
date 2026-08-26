@@ -533,6 +533,69 @@ class StartupContractTests(unittest.TestCase):
         self.assertIs(selected, fake_main.main)
         self.assertEqual(imports, ["hermes_cli.main"])
 
+    def test_gateway_launcher_strips_external_supervisor_for_legacy_cli(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "hermes_gateway_launcher_legacy_flag_test",
+            GATEWAY_LAUNCHER,
+        )
+        assert spec is not None and spec.loader is not None
+        launcher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launcher)
+
+        def import_module(name):
+            raise ModuleNotFoundError(name="hermes_cli.subcommands")
+
+        argv = [
+            "gateway-launcher.py",
+            "gateway",
+            "run",
+            "--external-supervisor",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            launcher._remove_unsupported_external_supervisor(import_module)
+            self.assertEqual(
+                sys.argv,
+                ["gateway-launcher.py", "gateway", "run"],
+            )
+
+    def test_gateway_launcher_preserves_external_supervisor_for_modern_cli(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "hermes_gateway_launcher_modern_flag_test",
+            GATEWAY_LAUNCHER,
+        )
+        assert spec is not None and spec.loader is not None
+        launcher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launcher)
+        parser_module = types.ModuleType("hermes_cli.subcommands.gateway")
+
+        def build_gateway_parser():
+            return "--external-supervisor"
+
+        setattr(parser_module, "build_gateway_parser", build_gateway_parser)
+        argv = [
+            "gateway-launcher.py",
+            "gateway",
+            "run",
+            "--external-supervisor",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            launcher._remove_unsupported_external_supervisor(
+                lambda name: parser_module
+            )
+            self.assertEqual(
+                sys.argv,
+                [
+                    "gateway-launcher.py",
+                    "gateway",
+                    "run",
+                    "--external-supervisor",
+                ],
+            )
+
     def test_gateway_config_guard_enforces_enabled_and_disabled_values(self):
         self.assertTrue(GATEWAY_LAUNCHER.is_file())
         import importlib.util
@@ -738,11 +801,11 @@ class ReservedApiVariableTests(unittest.TestCase):
 
 
 class PublicationMetadataTests(unittest.TestCase):
-    def test_addon_version_is_1_3_1(self):
+    def test_addon_version_is_1_3_2(self):
         config = CONFIG.read_text()
         match = re.search(r'^version:\s*["\']?([^"\'\s]+)', config, re.MULTILINE)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1) if match else None, "1.3.1")
+        self.assertEqual(match.group(1) if match else None, "1.3.2")
 
     def test_translation_describes_api_password_policy(self):
         translation = TRANSLATION.read_text().lower()
@@ -815,14 +878,22 @@ class PublicationMetadataTests(unittest.TestCase):
 
     def test_release_changelog_records_actual_verification(self):
         changelog = CHANGELOG.read_text()
-        release = changelog.split("## [1.3.1] - 2026-07-31", 1)[1].split(
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split(
             "\n## [", 1
         )[0]
+        release = changelog.split("## [1.3.2] - 2026-08-27", 1)[1].split(
+            "\n## [", 1
+        )[0]
+        self.assertEqual(unreleased.strip(), "")
+        self.assertIn("### Changed", release)
         self.assertIn("### Fixed", release)
-        self.assertIn("### Security", release)
         self.assertIn("### Verified", release)
-        self.assertIn("108 tests OK, 2 skipped", release)
-        self.assertIn("30 credential cases", release)
+        self.assertIn("backup size", release)
+        self.assertIn("`hermes-gateway`", release)
+        self.assertIn("external supervisor", release)
+        self.assertIn("122 tests OK, 2 skipped", release)
+        self.assertIn("older pinned Hermes revisions", release)
+        self.assertIn("Home Assistant", release)
         self.assertNotIn("Pending final publication verification", release)
 
 

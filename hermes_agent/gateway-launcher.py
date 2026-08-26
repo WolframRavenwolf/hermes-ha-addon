@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import os
 from pathlib import Path
+import sys
+from types import CodeType
 from typing import Any
 
 _HANDOFF = {
@@ -17,6 +19,58 @@ _HANDOFF = {
     "HERMES_ADDON_GATEWAY_NO_SUPERVISE": "HERMES_GATEWAY_NO_SUPERVISE",
     "HERMES_ADDON_SUPERVISED_CHILD": "HERMES_S6_SUPERVISED_CHILD",
 }
+_EXTERNAL_SUPERVISOR_FLAG = "--external-supervisor"
+_GATEWAY_PARSER_MODULE = "hermes_cli.subcommands.gateway"
+
+
+def _code_contains_external_supervisor(code: CodeType) -> bool:
+    """Detect the exact CLI feature in parser bytecode, including nested code."""
+    return any(
+        constant == _EXTERNAL_SUPERVISOR_FLAG
+        or (
+            isinstance(constant, CodeType)
+            and _code_contains_external_supervisor(constant)
+        )
+        for constant in code.co_consts
+    )
+
+
+def _supports_external_supervisor(
+    import_module: Any = importlib.import_module,
+) -> bool:
+    """Feature-detect the installed editable Hermes CLI without version guessing."""
+    try:
+        parser_module = import_module(_GATEWAY_PARSER_MODULE)
+    except ModuleNotFoundError as error:
+        missing = error.name or ""
+        if _GATEWAY_PARSER_MODULE == missing or _GATEWAY_PARSER_MODULE.startswith(
+            f"{missing}."
+        ):
+            return False
+        raise
+
+    return any(
+        isinstance(code, CodeType) and _code_contains_external_supervisor(code)
+        for code in (
+            getattr(value, "__code__", None)
+            for value in vars(parser_module).values()
+        )
+    )
+
+
+def _remove_unsupported_external_supervisor(
+    import_module: Any = importlib.import_module,
+) -> None:
+    """Keep old pinned Hermes revisions startable while preserving modern handback."""
+    if _EXTERNAL_SUPERVISOR_FLAG not in sys.argv:
+        return
+    if _supports_external_supervisor(import_module):
+        return
+    sys.argv[:] = [
+        argument
+        for argument in sys.argv
+        if argument != _EXTERNAL_SUPERVISOR_FLAG
+    ]
 
 
 def _capture_protected_values() -> dict[str, str]:
@@ -118,6 +172,7 @@ def main() -> None:
     _guard_env_loader(env_loader, protected)
 
     hermes_main = _import_fixed_profile_main()
+    _remove_unsupported_external_supervisor()
 
     from gateway import config as gateway_config  # type: ignore[import-not-found]
 
