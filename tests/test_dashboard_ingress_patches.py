@@ -4,6 +4,7 @@ from pathlib import Path
 import errno
 import os
 import runpy
+import shlex
 import signal
 import subprocess
 import sys
@@ -26,6 +27,92 @@ NGINX_TEMPLATE = ROOT / "hermes_agent" / "nginx.conf.tpl"
 NGINX_PORTS_TEMPLATE = ROOT / "hermes_agent" / "nginx-ports.conf.tpl"
 ADDON_CONFIG = ROOT / "hermes_agent" / "config.yaml"
 LANDING_TEMPLATE = ROOT / "hermes_agent" / "landing.html.tpl"
+
+
+def hermes_gateway_subcommand(command_line: str | None) -> str | None:
+    """Mirror Hermes v2026.8.19's complete gateway command-line recognizer."""
+    if not command_line:
+        return None
+    try:
+        raw_tokens = shlex.split(command_line, posix=False)
+    except ValueError:
+        raw_tokens = command_line.split()
+    tokens = [
+        token.strip("\"'").replace("\\", "/").lower()
+        for token in raw_tokens
+    ]
+    for token in tokens:
+        if token == "gateway/run.py" or token.endswith("/gateway/run.py"):
+            return "run"
+        if token.rsplit("/", 1)[-1] in (
+            "hermes-gateway",
+            "hermes-gateway.exe",
+        ):
+            return "run"
+
+    joined = " ".join(tokens)
+    has_gateway_entry = (
+        "hermes_cli.main" in joined
+        or "hermes_cli/main.py" in joined
+        or any(
+            token.rsplit("/", 1)[-1] in ("hermes", "hermes.exe")
+            for token in tokens
+        )
+    )
+    if not has_gateway_entry:
+        return None
+
+    filtered: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in ("--profile", "-p"):
+            skip_next = True
+            continue
+        if token.startswith("--profile=") or token.startswith("-p="):
+            continue
+        filtered.append(token)
+
+    for index, token in enumerate(filtered):
+        if token != "gateway":
+            continue
+        if index + 1 >= len(filtered):
+            return "run"
+        return filtered[index + 1]
+    return None
+
+
+def looks_like_hermes_gateway(command_line: str | None) -> bool:
+    return hermes_gateway_subcommand(command_line) == "run"
+
+
+def create_gateway_test_python(root: Path) -> Path:
+    """Create the production sibling interpreter layout inside a test-owned tree."""
+    bin_dir = root / "gateway-venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    python_path = bin_dir / "python"
+    python_path.symlink_to(sys.executable)
+    (bin_dir / "hermes-gateway").symlink_to("python")
+    return python_path
+
+
+def process_command_line(pid: int) -> str:
+    """Read one real process command line without narrowing its argv shape."""
+    proc_cmdline = Path(f"/proc/{pid}/cmdline")
+    if proc_cmdline.exists():
+        return " ".join(
+            os.fsdecode(argument)
+            for argument in proc_cmdline.read_bytes().split(b"\0")
+            if argument
+        )
+    return subprocess.run(
+        ["/bin/ps", "-ww", "-p", str(pid), "-o", "command="],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
 
 
 def run_dashboard_patches(src: Path, status_file: Path) -> subprocess.CompletedProcess[str]:
@@ -424,9 +511,128 @@ class DashboardIngressPatchTests(unittest.TestCase):
                 "/usr/local/lib/hermes-gateway-launcher.py",
                 "gateway",
                 "run",
+                "--external-supervisor",
             ],
         )
         self.assertNotIn("executable", keyword)
+
+    def test_gateway_supervisor_argv_is_not_discovered_as_gateway_runtime(self) -> None:
+        run_text = RUN_SH.read_text()
+        child_text = GATEWAY_CHILD.read_text()
+        supervisor_text = GATEWAY_SUPERVISOR.read_text()
+        launch_start = run_text.index('exec "$GATEWAY_CHILD"')
+        launch_end = run_text.index('> "$log_pipe" 2>&1', launch_start)
+        launch_block = run_text[launch_start:launch_end]
+
+        self.assertIn('"$VENV_DIR/bin/python"', launch_block)
+        self.assertNotIn('"$GATEWAY_PYTHON"', launch_block)
+        self.assertIn(
+            'exec "$python_path" "$supervisor" \\\n'
+            '    "$launcher" "$ready_path" "$parent_pid"',
+            child_text,
+        )
+        self.assertIn(
+            'Path(sys.executable).with_name("hermes-gateway")', supervisor_text
+        )
+
+        old_supervisor_argv = " ".join(
+            (
+                "/venv/bin/hermes-gateway",
+                "/usr/local/lib/hermes-gateway-supervisor.py",
+                "--environment-fd",
+                "7",
+                "/venv/bin/hermes-gateway",
+                "/usr/local/lib/hermes-gateway-launcher.py",
+                "/run/hermes-gateway-0.ready",
+                "1",
+            )
+        )
+        supervisor_argv = " ".join(
+            (
+                "/venv/bin/python",
+                "/usr/local/lib/hermes-gateway-supervisor.py",
+                "--environment-fd",
+                "7",
+                "/usr/local/lib/hermes-gateway-launcher.py",
+                "/run/hermes-gateway-0.ready",
+                "1",
+            )
+        )
+        runtime_argv = " ".join(
+            (
+                "/venv/bin/hermes-gateway",
+                "/usr/local/lib/hermes-gateway-launcher.py",
+                "gateway",
+                "run",
+                "--external-supervisor",
+            )
+        )
+        self.assertTrue(looks_like_hermes_gateway(old_supervisor_argv))
+        self.assertFalse(looks_like_hermes_gateway(supervisor_argv))
+        self.assertNotIn("--external-supervisor", shlex.split(supervisor_argv))
+        self.assertTrue(looks_like_hermes_gateway(runtime_argv))
+        self.assertIn("--external-supervisor", shlex.split(runtime_argv))
+
+    def test_gateway_supervisor_clean_reexec_exposes_only_child_as_gateway(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gateway_python = create_gateway_test_python(root)
+            launcher = root / "launcher.py"
+            runtime_ready = root / "runtime.ready"
+            supervisor_ready = root / "supervisor.ready"
+            launcher.write_text(
+                "import os,signal,sys,time\n"
+                "from pathlib import Path\n"
+                "Path(os.environ['RUNTIME_READY']).write_text(str(os.getpid()))\n"
+                "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))\n"
+                "while True: time.sleep(0.05)\n"
+            )
+            supervisor = subprocess.Popen(
+                [
+                    str(GATEWAY_CHILD),
+                    str(gateway_python),
+                    str(GATEWAY_SUPERVISOR),
+                    str(launcher),
+                    str(supervisor_ready),
+                    str(os.getpid()),
+                ],
+                env=os.environ | {"RUNTIME_READY": str(runtime_ready)},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                for _ in range(100):
+                    if runtime_ready.exists() and supervisor_ready.exists():
+                        break
+                    time.sleep(0.02)
+                self.assertTrue(runtime_ready.exists(), "gateway child did not publish readiness")
+                self.assertTrue(
+                    supervisor_ready.exists(), "gateway supervisor did not publish readiness"
+                )
+                runtime_pid = int(runtime_ready.read_text())
+                self.assertEqual(int(supervisor_ready.read_text()), supervisor.pid)
+                command_lines = {
+                    supervisor.pid: process_command_line(supervisor.pid),
+                    runtime_pid: process_command_line(runtime_pid),
+                }
+                self.assertNotIn(
+                    "--external-supervisor", shlex.split(command_lines[supervisor.pid])
+                )
+                self.assertIn(
+                    "--external-supervisor", shlex.split(command_lines[runtime_pid])
+                )
+                discovered = sorted(
+                    pid
+                    for pid, command_line in command_lines.items()
+                    if looks_like_hermes_gateway(command_line)
+                )
+                self.assertEqual(discovered, [runtime_pid], command_lines)
+            finally:
+                try:
+                    os.killpg(supervisor.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                supervisor.wait(timeout=5)
 
     def test_run_creates_recognizable_gateway_link_inside_venv(self) -> None:
         run_text = RUN_SH.read_text()
@@ -481,6 +687,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            gateway_python = create_gateway_test_python(root)
             launcher = root / "launcher.py"
             detached_pid_file = root / "detached.pid"
             supervisor_ready = root / "supervisor.ready"
@@ -498,7 +705,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     str(GATEWAY_CHILD),
-                    sys.executable,
+                    str(gateway_python),
                     str(GATEWAY_SUPERVISOR),
                     str(launcher),
                     str(supervisor_ready),
@@ -537,6 +744,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
         secret = "supervisor-must-not-retain-this-handoff"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            gateway_python = create_gateway_test_python(root)
             launcher = root / "launcher.py"
             observed = root / "observed"
             ready = root / "ready"
@@ -556,7 +764,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
             process = subprocess.Popen(
                 [
                     str(GATEWAY_CHILD),
-                    sys.executable,
+                    str(gateway_python),
                     str(GATEWAY_SUPERVISOR),
                     str(launcher),
                     str(supervisor_ready),
@@ -606,6 +814,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
     def test_gateway_supervisor_rejects_changed_parent_before_launch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            gateway_python = create_gateway_test_python(root)
             launcher = root / "launcher.py"
             marker = root / "gateway-started"
             ready = root / "supervisor.ready"
@@ -617,7 +826,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     str(GATEWAY_CHILD),
-                    sys.executable,
+                    str(gateway_python),
                     str(GATEWAY_SUPERVISOR),
                     str(launcher),
                     str(ready),
@@ -686,6 +895,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
         helper_end = run_text.index("\nshutdown() {", helper_start)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            gateway_python = create_gateway_test_python(root)
             helper = root / "supervisor.sh"
             helper.write_text(run_text[helper_start:helper_end])
             launcher = root / "gateway.py"
@@ -732,7 +942,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
                     "logger-supervisor-test",
                     str(helper),
                     str(GATEWAY_CHILD),
-                    sys.executable,
+                    str(gateway_python),
                     str(launcher),
                     str(fifo),
                     str(GATEWAY_LOGGER),
@@ -846,7 +1056,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
         unblock = supervisor_text.index("signal.SIG_UNBLOCK", resumed_contract)
         publish_ready = supervisor_text.index("_publish_ready(ready_path)", unblock)
         launch = supervisor_text.index(
-            "return supervise(python_path, launcher, gateway_environment)",
+            "return supervise(gateway_executable, launcher, gateway_environment)",
             publish_ready,
         )
         self.assertLess(initial_block, initial_contract)
@@ -872,6 +1082,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
         self.assertNotIn("tee", child_text)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            gateway_python = create_gateway_test_python(root)
             fake_launcher = root / "launcher.py"
             fake_launcher.write_text(
                 "import os, signal, subprocess, sys, time\n"
@@ -916,7 +1127,7 @@ class DashboardIngressPatchTests(unittest.TestCase):
             def gateway_command(ready_path: Path) -> list[str]:
                 return [
                     str(GATEWAY_CHILD),
-                    sys.executable,
+                    str(gateway_python),
                     str(GATEWAY_SUPERVISOR),
                     str(fake_launcher),
                     str(ready_path),
@@ -957,7 +1168,10 @@ class DashboardIngressPatchTests(unittest.TestCase):
             self.assertIn("term-output", output)
             self.assertIn("gateway exited with status 42", output)
             self.assertIn("owned descendants empty", output)
-            self.assertEqual(args_file.read_text().strip(), "gateway run")
+            self.assertEqual(
+                args_file.read_text().strip(),
+                "gateway run --external-supervisor",
+            )
 
             pid_file.unlink()
             pgid_file.unlink()

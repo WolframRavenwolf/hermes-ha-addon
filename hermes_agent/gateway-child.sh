@@ -14,4 +14,4 @@ ready_path="$4"
 parent_pid="$5"
 
 exec "$python_path" "$supervisor" \
-    "$python_path" "$launcher" "$ready_path" "$parent_pid"
+    "$launcher" "$ready_path" "$parent_pid"
