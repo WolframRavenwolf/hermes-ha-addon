@@ -31,18 +31,34 @@ def _read_password() -> str:
 
 
 def main() -> int:
-    password = _read_password()
     serve_args = sys.argv[1:]
     # Pin the official machine-level backend before Hermes' import-time profile
     # selection. This avoids a later named-profile re-exec that would bypass
     # this launcher and reload colliding machine-root environment layers.
-    sys.argv = ["hermes", "-p", "default", "serve", *serve_args]
+    #
+    # argv[0] must be a real file path, not the bare string "hermes": on a PM
+    # (package-manager) dependency desync, Hermes self-relaunches into the
+    # managed "store" interpreter via runpy.run_path(Path(sys.argv[0])),
+    # which resolves a bare word against the process cwd and crashes with
+    # FileNotFoundError. The prefix insert must also be idempotent: the
+    # self-relaunch re-runs this exact script from the top with the
+    # already-rewritten argv, so a naive unconditional prepend would
+    # double-insert "-p default serve" on the second pass.
+    if serve_args[:3] != ["-p", "default", "serve"]:
+        serve_args = ["-p", "default", "serve", *serve_args]
+    sys.argv = [os.path.abspath(__file__), *serve_args]
 
     # Import first: Hermes resolves the machine HERMES_HOME and loads profile,
     # project, external-secret and managed environment layers at module import
     # time. The explicit default profile is stripped from sys.argv during this
     # import, leaving the normal `hermes serve ...` dispatch contract.
     from hermes_cli import main as hermes_main
+
+    # Read stdin only after the import above: a PM self-relaunch replaces this
+    # process via os.execv, which preserves file descriptors including stdin.
+    # Reading the password before the relaunch would consume it in the
+    # process that gets replaced, leaving the relaunched process to hit EOF.
+    password = _read_password()
 
     hash_password = import_module(
         "plugins.dashboard_auth.basic"

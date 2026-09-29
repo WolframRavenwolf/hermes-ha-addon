@@ -163,8 +163,30 @@ def _import_fixed_profile_main(import_module: Any = importlib.import_module) -> 
     return main_module.main
 
 
+def _activate_pm_dependencies() -> None:
+    """Select the PM dependency generation before the /dev/null profile mask.
+
+    hermes_bootstrap resolves the PM install dir via get_default_hermes_root();
+    under _import_fixed_profile_main's mask it becomes /dev/null/installs/...
+    and the gateway silently falls back to the stale checkout venv (missing
+    extras such as python-telegram-bot, so the Telegram adapter never starts).
+    Lazy-install relaunch is suppressed for this one import so the process
+    keeps its hermes-gateway argv identity (status matcher relies on it).
+    """
+    previous = os.environ.get("HERMES_DISABLE_LAZY_INSTALLS")
+    os.environ["HERMES_DISABLE_LAZY_INSTALLS"] = "1"
+    try:
+        import hermes_bootstrap  # noqa: F401  # type: ignore[import-not-found]
+    finally:
+        if previous is None:
+            os.environ.pop("HERMES_DISABLE_LAZY_INSTALLS", None)
+        else:
+            os.environ["HERMES_DISABLE_LAZY_INSTALLS"] = previous
+
+
 def main() -> None:
     """Start the regular Hermes CLI after installing the API env guard."""
+    _activate_pm_dependencies()
     protected = _capture_protected_values()
 
     from hermes_cli import env_loader  # type: ignore[import-not-found]
