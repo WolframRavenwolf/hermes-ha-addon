@@ -721,6 +721,26 @@ class RenderedConfigTests(unittest.TestCase):
         self.assertIn("location /v1/", nginx_conf)
         self.assertIn("location /dashboard/", nginx_conf)
 
+    def test_detailed_health_routes_to_each_profile_with_bearer_auth(self):
+        out = self._render(profiles=self._two_profiles(), access_password="test-password")
+        for name in ("nginx.conf", "ports.conf"):
+            text = (out / name).read_text()
+            for index, prefix in enumerate(("", "/profile/amy")):
+                marker = f"location = {prefix}/health/detailed {{"
+                self.assertIn(marker, text)
+                block = text.split(marker, 1)[1].split("}", 1)[0]
+                self.assertIn(f"proxy_pass http://hermes_api_{index}/health/detailed;", block)
+                self.assertIn("proxy_set_header Authorization $http_authorization;", block)
+                if name == "ports.conf":
+                    self.assertIn("auth_basic off;", block)
+            self.assertNotIn("location /health/", text)
+
+    def test_detailed_health_honors_direct_api_flag(self):
+        out = self._render(profiles=self._two_profiles(), enable_api="false")
+        self.assertNotIn("/health/detailed", (out / "ports.conf").read_text())
+        self.assertIn("location = /health/detailed", (out / "nginx.conf").read_text())
+        self.assertIn("location = /profile/amy/health/detailed", (out / "nginx.conf").read_text())
+
     def test_dashboard_unavailable_strips_dashboard_everywhere(self):
         out = self._render(
             profiles=self._two_profiles(),
