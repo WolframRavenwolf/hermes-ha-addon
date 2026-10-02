@@ -131,35 +131,74 @@ def _guard_gateway_config(gateway_config: Any, protected: dict[str, str]) -> Non
     gateway_config.load_gateway_config = load_protected_gateway_config
 
 
+_STICKY_PROFILE_FILENAME = "active_profile"
+
+
+def _sticky_active_profile_paths() -> frozenset[Path]:
+    """Every path a sticky ``active_profile`` file can be read from.
+
+    Resolved before any masking, with the unpatched helpers, so the probe paths
+    match the ones Hermes builds while importing ``hermes_cli.main``: the
+    platform default home (``~/.hermes``) and the resolved default Hermes root
+    — ``HERMES_HOME`` itself in this add-on's container layout.
+    """
+    roots = {Path.home() / ".hermes"}
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    if env_home:
+        roots.add(Path(env_home).expanduser())
+    try:
+        import hermes_constants  # type: ignore[import-not-found]
+
+        root_helper = getattr(hermes_constants, "get_default_hermes_root", None)
+        if callable(root_helper):
+            roots.add(Path(root_helper()))
+    except Exception:  # no hermes_constants yet: the literal roots still cover the probe
+        pass
+    return frozenset(root / _STICKY_PROFILE_FILENAME for root in roots)
+
+
 def _import_fixed_profile_main(import_module: Any = importlib.import_module) -> Any:
-    """Import Hermes main without following a sticky interactive profile."""
-    import hermes_constants  # type: ignore[import-not-found]
+    """Import Hermes main without following a sticky interactive profile.
 
-    root_helper = getattr(hermes_constants, "get_default_hermes_root", None)
-    if callable(root_helper):
-        hermes_constants.get_default_hermes_root = lambda: Path(os.devnull)
-        try:
-            main_module = import_module("hermes_cli.main")
-        finally:
-            hermes_constants.get_default_hermes_root = root_helper
-        return main_module.main
+    The add-on owns HERMES_HOME, so a sticky ``active_profile`` (written by an
+    interactive ``hermes profile use`` in a terminal) must not re-home a
+    supervised gateway slot. Mask exactly the ``active_profile`` existence
+    probes for the duration of the import.
 
-    # Pre-2026-04-10 Hermes reads ~/.hermes/active_profile directly through
-    # pathlib while importing main. Mask exactly that one exists() probe so a
-    # sticky interactive choice cannot replace the add-on-assigned HERMES_HOME.
-    sticky_profile = Path.home() / ".hermes" / "active_profile"
+    Do NOT instead replace ``hermes_constants.get_default_hermes_root`` with a
+    ``/dev/null`` sentinel: modules that bind the helper at import time
+    (``pm.environments`` does) keep the replacement forever, so
+    ``dependency_home_root()`` resolved to ``/dev/null/installs/...`` and the
+    source-update dependency completion failed on every boot with ``cannot read
+    dependency environment: /dev/null/installs/<key>/facts.json`` — leaving any
+    platform SDK installed only in the committed dependency environment
+    unusable.
+    """
+    sticky_paths = _sticky_active_profile_paths()
     original_exists = Path.exists
+    original_is_file = Path.is_file
+
+    def masked(original: Any, path: Any, *args: Any, **kwargs: Any) -> bool:
+        try:
+            if Path(str(path)) in sticky_paths:
+                return False
+        except (TypeError, ValueError):
+            pass
+        return original(path, *args, **kwargs)
 
     def exists_without_sticky_profile(path: Path, *args: Any, **kwargs: Any) -> bool:
-        if path == sticky_profile:
-            return False
-        return original_exists(path, *args, **kwargs)
+        return masked(original_exists, path, *args, **kwargs)
+
+    def is_file_without_sticky_profile(path: Path, *args: Any, **kwargs: Any) -> bool:
+        return masked(original_is_file, path, *args, **kwargs)
 
     setattr(Path, "exists", exists_without_sticky_profile)
+    setattr(Path, "is_file", is_file_without_sticky_profile)
     try:
         main_module = import_module("hermes_cli.main")
     finally:
         setattr(Path, "exists", original_exists)
+        setattr(Path, "is_file", original_is_file)
     return main_module.main
 
 
