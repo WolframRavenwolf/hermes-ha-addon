@@ -136,6 +136,18 @@ HLOC
             proxy_read_timeout 3600s;
             proxy_send_timeout 3600s;
         }
+        # Detailed readiness is outside /v1/ and keeps API Bearer auth.
+        # Do not expose the whole /health/ prefix or inject dashboard tokens.
+        location = ${prefix}/health/detailed {
+            ${auth_off}
+            proxy_pass http://hermes_api_${i}/health/detailed;
+            proxy_http_version 1.1;
+            proxy_set_header Authorization \$http_authorization;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            ${proto_header}
+            proxy_buffering off;
+        }
 ALOC
         fi
 
