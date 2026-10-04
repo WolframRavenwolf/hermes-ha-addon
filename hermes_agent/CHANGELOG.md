@@ -6,6 +6,19 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-10-04
+
+### Fixed
+
+- Keep the Hermes source root importable when the gateway launcher re-enters itself after a PM interpreter replacement. PM relaunches with `-I -c "sys.path.insert(0, <root>)..."`; the 1.3.5 identity re-exec (`<store-python> -I <launcher>`) dropped that insert, and `-I` ignores `PYTHONPATH`, so every supervised gateway start failed with `ModuleNotFoundError: No module named 'hermes_cli'` (gateway slot restart loop, API port down). The root is now carried in a private, consumed environment variable and restored before bootstrap.
+
+### Verified
+
+- New process-boundary regression test with a managed interpreter that does not have the source on its own path (the real PM store layout): fails on 1.3.5 with the production `ModuleNotFoundError`, passes with the fix.
+- Full suite with Python 3.14.7: 150 run; the same 2 failures and 1 import error (`yaml` missing) occur identically on unpatched `main` in the test container.
+- Live HA OS add-on (1.3.5, Hermes `1298c8e`): with the captured environment of a failing supervised start, the shipped launcher fails with the same traceback; the patched launcher completes `gateway status`.
+- Container and Home Assistant Supervisor restart/update verification has not been performed for this candidate.
+
 ## [1.3.5] - 2026-10-04
 
 ### Fixed

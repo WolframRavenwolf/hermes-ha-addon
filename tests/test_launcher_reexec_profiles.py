@@ -128,6 +128,7 @@ class LauncherProcessTests(unittest.TestCase):
                     "handoffs": {k: v for k, v in os.environ.items() if k.startswith("HERMES_ADDON_")},
                     "lazy_flag": os.environ.get("HERMES_DISABLE_LAZY_INSTALLS"),
                     "sticky_probe_visible_after_import": active.exists() and active.is_file(),
+                    "reentry_env": os.environ.get("_HERMES_LAUNCHER_REENTRY_PATH"),
                 }))
         ''')
         _write(self.fake / "gateway" / "__init__.py", "")
@@ -227,6 +228,24 @@ class LauncherProcessTests(unittest.TestCase):
         self.assertEqual(result["os_argv"][-2:], ["gateway", "run"])
         self.assertEqual(Path(result["executable"]), self.selected)
         self.assertTrue(all(phase["handoffs"] == phases[0]["handoffs"] for phase in phases))
+
+    def test_managed_gateway_reentry_without_source_on_managed_path(self):
+        # Real PM store interpreters do not carry the Hermes checkout on their
+        # own sys.path: only the inline ``-c`` relaunch inserts it. The
+        # identity re-exec (``-I <launcher>``) must carry that root across,
+        # or the re-entered launcher cannot import hermes_bootstrap/hermes_cli.
+        for pth in self.selected.parents[1].glob("lib/python*/site-packages/probe.pth"):
+            pth.unlink()
+        script = self.root / "hermes-cli" / "hermes"
+        _write(script, (ADDON / "gateway-launcher.py").read_text())
+        completed, result, phases = self.run_launcher(script, self.root / "gateway-home")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([p["phase"] for p in phases], ["initial", "selected", "selected"])
+        self.assertNotIn("-c", result["os_argv"])
+        self.assertEqual(result["os_argv"][-2:], ["gateway", "run"])
+        self.assertEqual(Path(result["executable"]), self.selected)
+        self.assertIsNone(result["reentry_env"])
+        self.assertEqual(result["handoffs"], {})
 
     def test_dashboard_owns_an_isolated_listener_after_reexec(self):
         home = self.home / ".hermes" / "profiles" / "worker"
