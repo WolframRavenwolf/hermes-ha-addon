@@ -815,11 +815,13 @@ class ReservedApiVariableTests(unittest.TestCase):
 
 
 class PublicationMetadataTests(unittest.TestCase):
-    def test_addon_version_is_1_3_4(self):
+    def test_addon_version_matches_changelog(self):
         config = CONFIG.read_text()
         match = re.search(r'^version:\s*["\']?([^"\'\s]+)', config, re.MULTILINE)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1) if match else None, "1.3.4.2")
+        version = match.group(1) if match else ""
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertIn(f"## [{version}]", CHANGELOG.read_text())
 
     def test_translation_describes_api_password_policy(self):
         translation = TRANSLATION.read_text().lower()

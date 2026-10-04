@@ -79,6 +79,8 @@ RUN su - linuxbrew -c \
 COPY run.sh /
 COPY api-server.sh /usr/local/lib/hermes-api-server.sh
 COPY gateway-launcher.py /usr/local/lib/hermes-gateway-launcher.py
+COPY gateway-launcher.py /usr/local/lib/hermes-cli/hermes
+COPY dashboard-launcher.py /usr/local/lib/hermes-dashboard-launcher.py
 COPY gateway-child.sh /usr/local/lib/hermes-gateway-child.sh
 COPY gateway-supervisor.py /usr/local/lib/hermes-gateway-supervisor.py
 COPY gateway-logger.py /usr/local/lib/hermes-gateway-logger.py

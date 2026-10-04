@@ -52,6 +52,7 @@ fi
 source "$API_SERVER_LIB"
 GATEWAY_LAUNCHER=""
 for _candidate in \
+    "/usr/local/lib/hermes-cli/hermes" \
     "/usr/local/lib/hermes-gateway-launcher.py" \
     "$(dirname "${BASH_SOURCE[0]}")/gateway-launcher.py"; do
     if [ -f "$_candidate" ]; then
@@ -924,35 +925,9 @@ start_dashboard_for_profile() {
     (
         cd "$home"
         export HERMES_HOME="$home"
-        # Go through the real hermes CLI entry point, not `python -c "<source>"`.
-        # On a PM (package-manager) dependency desync, EVERY Hermes entry point
-        # self-relaunches into the managed "store" interpreter on next run
-        # (hermes_bootstrap -> venv_sync.prepare_launch). For a `-c` invocation
-        # that relaunch takes a special-cased path that execs the store
-        # interpreter with exec("<the literal code string>") directly,
-        # bypassing hermes_cli.main's normal import chain -- the very thing
-        # that would activate this venv's site-packages (fastapi, uvicorn,
-        # etc.) onto sys.path. The relaunched process then dies immediately
-        # on the first third-party import, with nothing watching it, so the
-        # dashboard silently stays down for the rest of the container's life.
-        # `hermes dashboard` (a real script path) self-relaunches through the
-        # normal import chain and starts clean under the same desync.
-        #
-        # The primary slot's home ($HOME/.hermes) does not sit under a
-        # "profiles" directory, so Hermes' own sticky-active-profile guard
-        # (hermes_cli/main.py::_apply_profile_override, which exempts any
-        # HERMES_HOME whose parent dir is literally named "profiles") does
-        # NOT cover it: a `hermes profile use <name>` run anywhere on this
-        # machine would silently redirect the primary dashboard onto that
-        # profile's home instead of its assigned one. Pin `-p default`
-        # for the primary slot only, mirroring desktop-backend-launcher.py's
-        # existing pin for the same reason. Named slots (i>0) already live
-        # under .../profiles/<name> and are already exempted by that guard.
-        dashboard_profile_args=()
-        if [ "$i" -eq 0 ]; then
-            dashboard_profile_args=(-p default)
-        fi
-        exec "$VENV_DIR/bin/hermes" "${dashboard_profile_args[@]}" dashboard --host 127.0.0.1 --port "${port}" --skip-build --no-open
+        # A real script survives PM's interpreter handback; its import-time
+        # profile mask keeps this exact assigned home even with sticky selection.
+        exec "$VENV_DIR/bin/python" /usr/local/lib/hermes-dashboard-launcher.py dashboard --host 127.0.0.1 --port "${port}" --skip-build --no-open
     ) &
     DASHBOARD_PIDS[$i]=$!
     echo "[run] [$name] Dashboard PID: ${DASHBOARD_PIDS[$i]}"
