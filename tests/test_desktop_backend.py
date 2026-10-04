@@ -154,7 +154,7 @@ class DesktopBackendLauncherTests(unittest.TestCase):
             self.assertEqual(
                 payload["argv_at_import"],
                 [
-                    "hermes",
+                    str(DESKTOP_LAUNCHER),
                     "-p",
                     "default",
                     "serve",
@@ -168,7 +168,7 @@ class DesktopBackendLauncherTests(unittest.TestCase):
             self.assertEqual(
                 payload["argv"],
                 [
-                    "hermes",
+                    str(DESKTOP_LAUNCHER),
                     "serve",
                     "--host",
                     "0.0.0.0",

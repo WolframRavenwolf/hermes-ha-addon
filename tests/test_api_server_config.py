@@ -469,6 +469,7 @@ class StartupContractTests(unittest.TestCase):
             "get_default_hermes_root",
             lambda: Path("/real/hermes/root"),
         )
+        hermes_bootstrap = types.ModuleType("hermes_bootstrap")
         modules = {
             "hermes_cli": package,
             "hermes_cli.env_loader": env_loader,
@@ -476,6 +477,7 @@ class StartupContractTests(unittest.TestCase):
             "gateway": gateway_package,
             "gateway.config": gateway_config,
             "hermes_constants": hermes_constants,
+            "hermes_bootstrap": hermes_bootstrap,
         }
         with mock.patch.dict(sys.modules, modules), mock.patch.dict(
             os.environ,
@@ -817,7 +819,7 @@ class PublicationMetadataTests(unittest.TestCase):
         config = CONFIG.read_text()
         match = re.search(r'^version:\s*["\']?([^"\'\s]+)', config, re.MULTILINE)
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1) if match else None, "1.3.4")
+        self.assertEqual(match.group(1) if match else None, "1.3.4.2")
 
     def test_translation_describes_api_password_policy(self):
         translation = TRANSLATION.read_text().lower()
