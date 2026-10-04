@@ -215,12 +215,33 @@ def _activate_pm_dependencies() -> None:
             raise
 
 
+_REENTRY_PATH_ENV = "_HERMES_LAUNCHER_REENTRY_PATH"
+
+
+def _restore_reentry_path() -> None:
+    """Re-add the Hermes source root carried across the identity re-exec.
+
+    PM's relaunch inserts the checkout root inline (``-I -c "sys.path.insert(...)"``);
+    a managed store interpreter does not otherwise have it on ``sys.path``, and
+    ``-I`` ignores PYTHONPATH. Consume the variable so it never reaches Hermes.
+    """
+    path = os.environ.pop(_REENTRY_PATH_ENV, "")
+    if path and path not in sys.path:
+        sys.path.insert(0, path)
+
+
 def _restore_gateway_command_identity() -> None:
     """Leave PM's inline reentry as a discoverable script before taking handoffs."""
     original = getattr(sys, "orig_argv", [])
     if "-c" not in original:
         return
     options = original[1:original.index("-c")]
+    bootstrap = sys.modules.get("hermes_bootstrap")
+    bootstrap_file = getattr(bootstrap, "__file__", None)
+    if bootstrap_file:
+        # The script form below drops the inline sys.path insert; carry the
+        # source root so the re-entered launcher can still import Hermes.
+        os.environ[_REENTRY_PATH_ENV] = str(Path(bootstrap_file).resolve().parent)
     os.execv(sys.executable, [
         sys.executable, *options, str(Path(__file__).absolute()), *sys.argv[1:],
     ])
@@ -228,6 +249,7 @@ def _restore_gateway_command_identity() -> None:
 
 def main() -> None:
     """Start the regular Hermes CLI after installing the API env guard."""
+    _restore_reentry_path()
     _activate_pm_dependencies()
     _restore_gateway_command_identity()
     protected = _capture_protected_values()
