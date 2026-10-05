@@ -894,13 +894,13 @@ class PublicationMetadataTests(unittest.TestCase):
 
     def test_release_changelog_records_actual_verification(self):
         changelog = CHANGELOG.read_text()
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split(
+        lifecycle_release = changelog.split("## [1.3.7] - 2026-10-05", 1)[1].split(
             "\n## [", 1
         )[0]
         release = changelog.split("## [1.3.3] - 2026-09-26", 1)[1].split(
             "\n## [", 1
         )[0]
-        self.assertEqual(unreleased.strip(), "")
+        self.assertIn("dashboard gateway Start/Stop/Restart requests with HTTP 409", lifecycle_release)
         self.assertIn("### Fixed", release)
         self.assertIn("### Verified", release)
         self.assertIn("`gateway.standalone: true`", release)

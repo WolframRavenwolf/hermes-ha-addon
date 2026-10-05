@@ -4,7 +4,13 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
-## [Unreleased]
+## [1.3.7] - 2026-10-05
+
+### Fixed
+- Reject dashboard gateway Start/Stop/Restart requests with HTTP 409 and Home Assistant add-on lifecycle guidance before upstream Hermes can spawn native service-manager actions. The add-on's fixed gateway slots remain owned by its `run.sh` supervisor; this does not add individual slot controls.
+
+### Verified
+- Local focused RED/GREEN tests, pinned Hermes `439334127f` route-handler smoke, and full isolated unittest discovery. Container and Home Assistant Supervisor behavior have not been tested.
 
 ## [1.3.6] - 2026-10-04
 

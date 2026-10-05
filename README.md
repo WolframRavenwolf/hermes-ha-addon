@@ -80,7 +80,7 @@ The first entry is the **primary** — it keeps the existing root URLs (`/hermes
 
 **Note:** Values added via `env_vars` are not removed or reset from `.env` when cleared or removed in the Home Assistant UI -- edit each profile's `.env` directly to remove them.
 
-**Gateway lifecycle:** The add-on owns every configured gateway slot and automatically restarts a slot whenever its process exits. Hermes CLI commands such as `hermes gateway stop` and `hermes gateway restart` target Hermes' native service-manager registrations, not these add-on-managed slots, and are therefore not supported as add-on lifecycle controls. Stop or restart the Home Assistant add-on through Supervisor instead.
+**Gateway lifecycle:** The add-on owns every configured gateway slot and automatically restarts a slot whenever its process exits. The dashboard's gateway Start/Stop/Restart buttons return HTTP 409 with Home Assistant guidance: upstream Hermes lifecycle commands target its own service manager, not these add-on-managed slots. Native CLI `hermes gateway start`, `stop`, and `restart` are likewise not supported as add-on lifecycle controls. Start, stop, or restart the whole Home Assistant add-on through Supervisor instead; this affects all configured profiles and add-on services.
 
 Hermes-internal configuration (model, platforms, memory, tools) is managed via the terminal:
 
