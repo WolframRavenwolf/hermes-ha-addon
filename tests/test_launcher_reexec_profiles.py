@@ -86,6 +86,19 @@ class LauncherProcessTests(unittest.TestCase):
                     return value.parent.parent if value.parent.name == "profiles" else value
         ''')
         _write(self.fake / "hermes_cli" / "__init__.py", "")
+        _write(self.fake / "hermes_cli" / "web_server.py", '''
+            class FakeApp:
+                guard_installed = False
+                def __init__(self):
+                    self.user_middleware = []
+                def middleware(self, kind):
+                    def register(handler):
+                        self.guard_installed = True
+                        self.user_middleware.insert(0, handler)
+                        return handler
+                    return register
+            app = FakeApp()
+        ''')
         _write(self.fake / "hermes_cli" / "env_loader.py", '''
             import os
             def load_hermes_dotenv(*args, **kwargs):
@@ -129,6 +142,9 @@ class LauncherProcessTests(unittest.TestCase):
                     "lazy_flag": os.environ.get("HERMES_DISABLE_LAZY_INSTALLS"),
                     "sticky_probe_visible_after_import": active.exists() and active.is_file(),
                     "reentry_env": os.environ.get("_HERMES_LAUNCHER_REENTRY_PATH"),
+                    "dashboard_guard_installed": getattr(
+                        getattr(sys.modules.get("hermes_cli.web_server"), "app", None),
+                        "guard_installed", False),
                 }))
         ''')
         _write(self.fake / "gateway" / "__init__.py", "")
@@ -263,6 +279,7 @@ class LauncherProcessTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual([p["phase"] for p in phases], ["initial", "selected"])
         self.assertEqual(result["argv"].count("dashboard"), 1)
+        self.assertTrue(result["dashboard_guard_installed"])
 
     def test_dashboard_reexec_preserves_exact_assigned_home_in_every_layout(self):
         homes = {
