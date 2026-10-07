@@ -5,8 +5,9 @@ configuration:
   git_ref:
     name: Git Branch/Tag
     description: >-
-      Branch, tag, or commit hash to check out.
+      Branch or tag used only when creating the initial source checkout.
       Leave empty for the repository's default branch.
+      Changing this option later does not switch an existing checkout.
   git_token:
     name: Git/GitHub Token
     description: >-
@@ -15,7 +16,8 @@ configuration:
   auto_update:
     name: Auto Update
     description: >-
-      Pull latest changes from git on every restart.
+      Pull latest changes from the current branch on every restart.
+      This does not use the Hermes CLI's update channel selection.
   hass_url:
     name: Home Assistant URL
     description: Home Assistant base URL for API access.
