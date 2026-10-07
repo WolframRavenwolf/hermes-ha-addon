@@ -35,9 +35,9 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | Option                | Default                                            | Description                                                                     |
 | --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `git_url`             | `https://github.com/NousResearch/hermes-agent.git` | Git repository URL (clear to reset to default)                                  |
-| `git_ref`             |                                                    | Branch, tag, or commit (empty = repo's default branch)                          |
+| `git_ref`             |                                                    | Branch or tag for the initial clone (empty = repo's default branch); see source updates below |
 | `git_token`           |                                                    | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI                 |
-| `auto_update`         | `false`                                            | Pull latest changes on restart (preserves local modifications)                  |
+| `auto_update`         | `false`                                            | Pull the checked-out branch on restart; see source update limitations below     |
 | `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                               |
 | `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
 | `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
@@ -52,6 +52,18 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `profile_env_vars`    | `[]`                                               | Per-profile `.env` overrides: each entry is `{profile, name, value}` where `profile` matches a directory in `profiles` |
 
 API keys can be configured in two places: `env_vars` above (convenient, via Home Assistant UI) or each profile's `.env` directly (full list, via terminal or `hermes setup`). Environment names must be standard shell-variable identifiers, and configured values must not contain CR or LF. Non-empty top-level `env_vars` are written to every profile's `.env` on each start, overriding existing entries. Each `profile_env_vars.profile` must exactly match an entry in `profiles`; matching entries layer on top of the shared set.
+
+### Hermes source updates
+
+The add-on version and the persisted Hermes source checkout have separate update paths. Updating the add-on replaces its packaged scripts; `auto_update` controls source pulls at startup. All profiles share that source checkout.
+
+On the first clone, `git_ref` selects a branch or tag. Leaving it empty uses the repository's default branch. Changing `git_ref` after the clone exists does not switch that checkout.
+
+With `auto_update: false` (the default), startup does not pull source updates. Manual Hermes updates can still change the source. With `auto_update: true`, startup runs `git pull --ff-only` on the checked-out branch and attempts to stash and restore local changes. This path does not consult Hermes' saved update-channel selection; selecting Stable in Hermes alone does not constrain the add-on's startup updater.
+
+For a new installation, a release tag in `git_ref` with `auto_update: false` pins the initial source version. A fixed tag does not automatically follow future stable releases. For an existing installation, leave `auto_update: false` to avoid startup pulls while choosing an update strategy.
+
+A stable default and channel-aware startup updates are tracked in [#48](https://github.com/WolframRavenwolf/hermes-ha-addon/issues/48). Existing installations are not automatically moved to another release or branch.
 
 ### Running multiple profiles concurrently
 
