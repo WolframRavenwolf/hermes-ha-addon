@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # Homebrew deps
         file \
         # Python deps
-        python3-pip python3-venv \
+        python3-pip python3-venv python3-yaml \
         # Important Extras
         iputils-ping less netcat-openbsd \
         # Standard Extras
@@ -78,6 +78,7 @@ RUN su - linuxbrew -c \
 # ── Addon files ──────────────────────────────────────────────────────
 COPY run.sh /
 COPY api-server.sh /usr/local/lib/hermes-api-server.sh
+COPY source-channel.py /usr/local/lib/hermes-source-channel.py
 COPY gateway-launcher.py /usr/local/lib/hermes-gateway-launcher.py
 COPY gateway-launcher.py /usr/local/lib/hermes-cli/hermes
 COPY dashboard-launcher.py /usr/local/lib/hermes-dashboard-launcher.py

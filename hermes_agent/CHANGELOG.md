@@ -4,6 +4,17 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
+## [1.3.8] - 2026-10-12
+
+### Fixed
+- Fresh official installs with an empty `git_ref` select a verified published stable release rather than the moving default branch. A failed release lookup stops before cloning.
+- For an existing official blank-ref checkout with `auto_update: true`, resolve the single shared source target through Hermes' native source-channel API and apply it before the add-on's existing Python/venv installation. Read saved per-install channel choices from every configured profile without changing their config files; conflicting choices stop startup. An unchosen stable default only moves forward. Git refuses updates that would overwrite local source edits.
+- Preserve custom repository URLs and explicit branch/tag refs, including their prior branch-pull behavior. New clones no longer immediately pull a second time.
+
+### Verified
+- Local focused RED/GREEN source-selection regressions; complete isolated add-on unittest discovery: 168 passed, 3 skipped (171 total). Exact pinned Hermes v0.21.7 source resolver exercised against local Git and mocked HTTPS. Shell syntax, YAML, and diff checks passed. No add-on container or Home Assistant Supervisor smoke has been performed.
+- Older official checkouts without the native source-channel API use the same verified published-release selector for Stable, or follow `main` when that channel was explicitly saved. An unavailable legacy non-Stable channel is held with an actionable warning while startup continues. No source update runs when the GitHub release cannot be verified.
+
 ## [1.3.7] - 2026-10-05
 
 ### Fixed

@@ -35,9 +35,9 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | Option                | Default                                            | Description                                                                     |
 | --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `git_url`             | `https://github.com/NousResearch/hermes-agent.git` | Git repository URL (clear to reset to default)                                  |
-| `git_ref`             |                                                    | Branch or tag for the initial clone (empty = repo's default branch); see source updates below |
+| `git_ref`             |                                                    | Branch or tag for initial clone (empty = published Stable release for official URL; custom URL uses its default branch) |
 | `git_token`           |                                                    | Token for private repos + exported as `GITHUB_TOKEN` for gh CLI                 |
-| `auto_update`         | `false`                                            | Pull the checked-out branch on restart; see source update limitations below     |
+| `auto_update`         | `false`                                            | Update shared source at startup using the selected channel on official blank-ref checkouts; see below |
 | `hass_url`            | `http://homeassistant.local:8123`                  | Home Assistant URL for API access                                               |
 | `homeassistant_token` |                                                    | Long-lived access token for Home Assistant API integration                      |
 | `enable_dashboard`    | `false`                                            | Enable web dashboard on direct HTTP/HTTPS ports                                 |
@@ -55,15 +55,15 @@ API keys can be configured in two places: `env_vars` above (convenient, via Home
 
 ### Hermes source updates
 
-The add-on version and the persisted Hermes source checkout have separate update paths. Updating the add-on replaces its packaged scripts; `auto_update` controls source pulls at startup. All profiles share that source checkout.
+The add-on version and the persisted Hermes source checkout have separate update paths. Updating the add-on replaces its packaged scripts; `auto_update` controls source updates at startup and defaults to `false`. All profiles share one checkout and add-on-managed Python environment.
 
-On the first clone, `git_ref` selects a branch or tag. Leaving it empty uses the repository's default branch. Changing `git_ref` after the clone exists does not switch that checkout.
+For the official `git_url` with empty `git_ref`, a fresh install clones the latest **published stable GitHub release** (`vX.Y.Z`), verifies its tag and commit against the official origin, and stops if the release cannot be verified. It does not fall back to `main`. An existing checkout is not switched merely by upgrading the add-on. With `auto_update: false`, no source update is attempted.
 
-With `auto_update: false` (the default), startup does not pull source updates. Manual Hermes updates can still change the source. With `auto_update: true`, startup runs `git pull --ff-only` on the checked-out branch and attempts to stash and restore local changes. This path does not consult Hermes' saved update-channel selection; selecting Stable in Hermes alone does not constrain the add-on's startup updater.
+With `auto_update: true` on an existing official blank-ref checkout, the add-on consults the checkout's native Hermes source-channel resolver before its ordinary Python/venv installation and before gateways start. A saved `hermes update --set-channel main`, `stable`, or other supported channel in any configured profile applies to the shared checkout; conflicting explicit choices stop startup and name the affected profile homes. No profile config is rewritten. An unchosen default follows Stable **forward only**: a checkout already newer than the latest published release stays where it is. An explicitly saved Stable choice can select an older stable release. Local source changes are kept when Git can apply the target without overwriting them; an unsafe update stops startup rather than discarding them. The add-on still owns the shared venv and gateways; it does not run the full `hermes update` lifecycle or migrate its package manager.
 
-For a new installation, a release tag in `git_ref` with `auto_update: false` pins the initial source version. A fixed tag does not automatically follow future stable releases. For an existing installation, leave `auto_update: false` to avoid startup pulls while choosing an update strategy.
+Older official checkouts without Hermes' native source-channel API still follow a verified published Stable release (forward-only unless Stable was explicitly saved); an explicit `main` selection follows the main branch. If the release lookup is unavailable, the update is held with a warning and startup continues with the existing source. A saved non-Stable channel on an old checkout cannot be resolved without the native API: startup warns and retains the existing checkout. Manually upgrade to a current published Hermes release to resume that channel. A saved non-Stable channel on a *fresh* official checkout also needs manual bootstrap of a native-capable checkout; startup fails instead of choosing another channel silently.
 
-A stable default and channel-aware startup updates are tracked in [#48](https://github.com/WolframRavenwolf/hermes-ha-addon/issues/48). Existing installations are not automatically moved to another release or branch.
+An explicit `git_ref` (branch or tag) or custom `git_url` keeps the previous Git clone and branch-pull behavior and bypasses the official Stable selector. `git_ref` is used only on the first clone; changing it later does not switch an existing checkout. A fixed tag is detached and cannot follow future tags through `git pull`. For a release pin, use a tag and leave `auto_update: false`.
 
 ### Running multiple profiles concurrently
 

@@ -152,6 +152,7 @@ class PythonRuntimeTests(unittest.TestCase):
             GIT_REF=test-ref
             GIT_TOKEN=''
             AUTO_UPDATE=false
+            PROFILE_HOMES=({shlex.quote(str(self.home))})
             {installation_functions()}
             compute_marker() {{ printf '%s\\n' {shlex.quote(marker)}; }}
             install_hermes_core

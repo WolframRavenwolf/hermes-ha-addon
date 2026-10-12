@@ -386,24 +386,68 @@ import hermes_cli.config
 install_hermes_core() {
     mkdir -p "$(dirname "$SRC_DIR")"
 
+    local new_clone=false
+    # The image supplies the selector; source/venv still belong to this add-on.
+    local selector="/usr/local/lib/hermes-source-channel.py"
+    if [ ! -f "$selector" ]; then
+        selector="$(dirname "${BASH_SOURCE[0]:-/run.sh}")/source-channel.py"
+    fi
+    local -a profile_args=()
+    local profile_home
+    for profile_home in "${PROFILE_HOMES[@]}"; do
+        profile_args+=(--home "$profile_home")
+    done
+
     # Clone if missing
     if [ ! -d "$SRC_DIR/.git" ]; then
+        local selection selected_ref pinned_sha
+        selection=$(/usr/bin/python3 -B "$selector" clone "$SRC_DIR" \
+            --url "$GIT_URL" --ref "$GIT_REF" "${profile_args[@]}") || return 1
+        selected_ref="${selection%%$'\t'*}"
+        pinned_sha="${selection#*$'\t'}"
         echo "[run] Cloning Hermes Agent..."
         local clone_url="$GIT_URL"
         if [ -n "$GIT_TOKEN" ]; then
             clone_url=$(echo "$GIT_URL" | sed "s|https://|https://${GIT_TOKEN}@|")
         fi
         local clone_args=()
-        if [ -n "$GIT_REF" ]; then
-            clone_args+=(--branch "$GIT_REF")
+        if [ -n "$selected_ref" ]; then
+            clone_args+=(--branch "$selected_ref")
         fi
-        git clone "${clone_args[@]}" "$clone_url" "$SRC_DIR"
+        # Keep an unverified or interrupted clone out of the persistent source path.
+        if [ -e "$SRC_DIR" ] || [ -L "$SRC_DIR" ]; then
+            echo "[run] FATAL: source path exists without a Git checkout" >&2
+            return 1
+        fi
+        local staged_clone
+        staged_clone=$(mktemp -d "${SRC_DIR}.clone.XXXXXX") || return 1
+        if ! git clone "${clone_args[@]}" "$clone_url" "$staged_clone/source"; then
+            rm -rf -- "$staged_clone"
+            return 1
+        fi
+        if [ -n "$pinned_sha" ] && [ "$(cd "$staged_clone/source" && git rev-parse HEAD)" != "$pinned_sha" ]; then
+            echo "[run] FATAL: cloned release differs from verified published commit" >&2
+            rm -rf -- "$staged_clone"
+            return 1
+        fi
+        mv -- "$staged_clone/source" "$SRC_DIR" || return 1
+        rmdir -- "$staged_clone"
+        new_clone=true
         (cd "$SRC_DIR" && git submodule update --init --recursive 2>/dev/null || true)
         echo "[run] Clone complete: $(cd "$SRC_DIR" && git log --oneline -1)"
     fi
 
-    # Auto-update (stash local changes, pull, restore)
-    if [ "$AUTO_UPDATE" = "true" ] && [ -d "$SRC_DIR/.git" ]; then
+    # Resolve official blank-ref updates using the selected source's native API.
+    # Leave Python/venv installation and all gateway lifecycle work below intact.
+    if [ "$AUTO_UPDATE" = "true" ] && [ "$new_clone" = "false" ] && \
+        [ "$GIT_URL" = "https://github.com/NousResearch/hermes-agent.git" ] && [ -z "$GIT_REF" ]; then
+        local source_python="/usr/bin/python3"
+        if [ -x "$VENV_DIR/bin/python" ]; then
+            source_python="$VENV_DIR/bin/python"
+        fi
+        "$source_python" -B "$selector" update "$SRC_DIR" "${profile_args[@]}" || return 1
+    elif [ "$AUTO_UPDATE" = "true" ] && [ "$new_clone" = "false" ]; then
+        # Preserve explicit refs and custom origins' existing branch/tag behavior.
         echo "[run] Pulling latest changes..."
         (
             cd "$SRC_DIR"

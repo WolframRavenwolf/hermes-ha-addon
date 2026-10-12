@@ -6,7 +6,8 @@ configuration:
     name: Git Branch/Tag
     description: >-
       Branch or tag used only when creating the initial source checkout.
-      Leave empty for the repository's default branch.
+      Leave empty to use the latest published Stable release for the official
+      repository. Custom repositories use their default branch instead.
       Changing this option later does not switch an existing checkout.
   git_token:
     name: Git/GitHub Token
@@ -16,8 +17,10 @@ configuration:
   auto_update:
     name: Auto Update
     description: >-
-      Pull latest changes from the current branch on every restart.
-      This does not use the Hermes CLI's update channel selection.
+      Update one shared source checkout at startup. Official repository with
+      empty Git Ref follows the saved Hermes source channel; an unchosen Stable
+      default only moves forward. Custom repositories and explicit refs keep
+      their existing branch-pull behavior. Disabled by default.
   hass_url:
     name: Home Assistant URL
     description: Home Assistant base URL for API access.
