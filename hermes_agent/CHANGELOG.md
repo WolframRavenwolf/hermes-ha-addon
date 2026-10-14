@@ -4,6 +4,15 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
+## [1.3.9] - 2026-10-14
+
+### Fixed
+- Keep an existing official checkout available when a source lookup or fetch fails before applying an update. Avoid fetching the entire tag tree during startup. Saved-channel conflicts, invalid release identities and unsafe source changes remain errors. Addresses #56.
+- Download the pinned Go archive with bounded retries and verify it before extraction so an interrupted transfer cannot install a partial archive. Addresses #57.
+
+### Verification
+- Isolated discovery and one targeted retry: 190 passed, 3 skipped (193 total), including startup timeout/failed-fetch regressions and the real curl/tar Go RUN expression against local HTTP. An unchanged timing-sensitive Desktop test failed once in discovery, then passed separately on the candidate and baseline. Exact pinned Hermes v0.21.7 native source resolver, shell syntax, Python AST, YAML and diff checks passed. Container and Home Assistant Supervisor validation have not been performed.
+
 ## [1.3.8] - 2026-10-12
 
 ### Fixed

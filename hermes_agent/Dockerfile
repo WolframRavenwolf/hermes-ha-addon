@@ -49,8 +49,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 # ── Go 1.26 ─────────────────────────────────────────────────────────
 RUN ARCH=$(dpkg --print-architecture) \
-    && curl -fsSL "https://go.dev/dl/go1.26.1.linux-${ARCH}.tar.gz" \
-        | tar -C /usr/local -xz
+    && case "$ARCH" in \
+        amd64) SHA256=031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a ;; \
+        arm64) SHA256=a290581cfe4fe28ddd737dde3095f3dbeb7f2e4065cab4eae44dfc53b760c2f7 ;; \
+        *) echo "Unsupported Go architecture: $ARCH" >&2; exit 1 ;; \
+    esac \
+    && archive=$(mktemp) \
+    && trap 'rm -f "$archive"' EXIT \
+    && curl -fsSL --retry 3 --retry-all-errors --retry-delay 1 \
+        --connect-timeout 30 --max-time 300 \
+        -o "$archive" "https://go.dev/dl/go1.26.1.linux-${ARCH}.tar.gz" \
+    && printf '%s  %s\n' "$SHA256" "$archive" | sha256sum -c - \
+    && tar -C /usr/local -xz -f "$archive"
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 # ── ttyd (compiled from source for glibc forkpty) ────────────────────
