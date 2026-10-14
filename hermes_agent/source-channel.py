@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 import yaml
@@ -98,6 +99,29 @@ def native_target(channel, git_cmd, source, forward_only):
                                  forward_only=forward_only)
 
 
+def transport_failure(exc):
+    """Only typed pre-checkout download failures may leave an update pending."""
+    while exc is not None:
+        if isinstance(exc, (urllib.error.URLError, TimeoutError,
+                            ConnectionError, subprocess.TimeoutExpired)):
+            return True
+        if (isinstance(exc, subprocess.CalledProcessError) and
+                isinstance(exc.cmd, (list, tuple)) and
+                exc.cmd[:2] == ["git", "ls-remote"]):
+            return True
+        exc = exc.__cause__
+    return False
+
+
+def hold_update(source, exc):
+    # A failed first clone or an unborn/corrupt checkout cannot start from old source.
+    if not (source / ".git").exists():
+        raise ValueError("Cannot retain source: Git checkout is missing") from exc
+    git(source, "rev-parse", "--verify", "HEAD^{commit}")
+    print(f"[run] WARNING: source update held: {exc}; existing source retained",
+          file=sys.stderr)
+
+
 def update(source, homes):
     channel, explicit = choice(source, homes)
     try:
@@ -112,7 +136,9 @@ def update(source, homes):
             try:
                 _, commit = published_release()
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                print(f"[run] WARNING: stable update held: {exc}; existing source retained", file=sys.stderr)
+                if not transport_failure(exc):
+                    raise
+                hold_update(source, exc)
                 return
             target = SimpleNamespace(commit=commit, branch=None, ahead=False)
         else:
@@ -120,13 +146,24 @@ def update(source, homes):
                   "source-channel API; manually upgrade to a current published Hermes release",
                   file=sys.stderr)
             return
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        if not transport_failure(exc):
+            raise
+        hold_update(source, exc)
+        return
     if target.commit:
         if not SHA.fullmatch(target.commit):
             raise ValueError("Native source target has an invalid commit")
         head = git(source, "rev-parse", "HEAD")
         if head == target.commit or target.ahead:
             return
-        git(source, "fetch", "origin", "--tags")
+        if subprocess.run(["git", "cat-file", "-e", target.commit + "^{commit}"],
+                          cwd=source, check=False, capture_output=True, timeout=90).returncode != 0:
+            try:
+                git(source, "fetch", "--no-tags", "origin", target.commit)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                hold_update(source, exc)
+                return
         git(source, "cat-file", "-e", target.commit + "^{commit}")
         if not explicit:
             if subprocess.run(["git", "merge-base", "--is-ancestor", target.commit, head],
@@ -144,7 +181,11 @@ def update(source, homes):
         else:
             raise ValueError("Stable update is not forward-only; source unchanged")
     elif target.branch:
-        git(source, "fetch", "origin", target.branch)
+        try:
+            git(source, "fetch", "--no-tags", "origin", target.branch)
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            hold_update(source, exc)
+            return
         git(source, "merge", "--ff-only", "FETCH_HEAD")
     else:
         raise ValueError("Native source target has no commit or branch")

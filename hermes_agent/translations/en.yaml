@@ -19,8 +19,9 @@ configuration:
     description: >-
       Update one shared source checkout at startup. Official repository with
       empty Git Ref follows the saved Hermes source channel; an unchosen Stable
-      default only moves forward. Custom repositories and explicit refs keep
-      their existing branch-pull behavior. Disabled by default.
+      default only moves forward. A failed pre-update source lookup or fetch
+      retains an existing checkout with a warning. Custom repositories and
+      explicit refs keep their existing branch-pull behavior. Disabled by default.
   hass_url:
     name: Home Assistant URL
     description: Home Assistant base URL for API access.
