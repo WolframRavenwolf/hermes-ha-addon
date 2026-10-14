@@ -11,7 +11,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Download the pinned Go archive with bounded retries and verify it before extraction so an interrupted transfer cannot install a partial archive. Addresses #57.
 
 ### Verification
-- Isolated full suite: 189 passed, 3 skipped (192 total), including startup timeout/failed-fetch regressions and the real curl/tar Go RUN expression against local HTTP. Exact pinned Hermes v0.21.7 native source resolver, shell syntax, Python AST, YAML and diff checks passed. Container and Home Assistant Supervisor validation have not been performed.
+- Isolated discovery and one targeted retry: 190 passed, 3 skipped (193 total), including startup timeout/failed-fetch regressions and the real curl/tar Go RUN expression against local HTTP. An unchanged timing-sensitive Desktop test failed once in discovery, then passed separately on the candidate and baseline. Exact pinned Hermes v0.21.7 native source resolver, shell syntax, Python AST, YAML and diff checks passed. Container and Home Assistant Supervisor validation have not been performed.
 
 ## [1.3.8] - 2026-10-12
 

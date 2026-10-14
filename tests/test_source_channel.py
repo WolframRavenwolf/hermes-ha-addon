@@ -181,6 +181,17 @@ class SourceChannelTests(unittest.TestCase):
         self.assertIn("WARNING: source update held", error)
         self.assertEqual(git(self.source, "rev-parse", "HEAD"), self.release)
 
+    def test_native_local_git_timeout_remains_fatal(self):
+        for command in (["git", "rev-parse", "HEAD"],
+                        ["git", "merge-base", "--is-ancestor", self.release, self.newer]):
+            with self.subTest(command=command):
+                with patch.object(self.module, "native_target", side_effect=
+                                  subprocess.TimeoutExpired(command, 10)):
+                    code, error, _ = self.invoke()
+                self.assertEqual(code, 1)
+                self.assertNotIn("update held", error)
+                self.assertEqual(git(self.source, "rev-parse", "HEAD"), self.release)
+
     def test_nontransport_native_failure_still_fails_startup(self):
         def mismatch(*args, **kwargs):
             raise ValueError("No published stable release could be verified") from ValueError("tag SHA mismatch")

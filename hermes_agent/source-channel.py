@@ -102,12 +102,11 @@ def native_target(channel, git_cmd, source, forward_only):
 def transport_failure(exc):
     """Only typed pre-checkout download failures may leave an update pending."""
     while exc is not None:
-        if isinstance(exc, (urllib.error.URLError, TimeoutError,
-                            ConnectionError, subprocess.TimeoutExpired)):
+        if isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError)):
             return True
-        if (isinstance(exc, subprocess.CalledProcessError) and
+        if (isinstance(exc, (subprocess.TimeoutExpired, subprocess.CalledProcessError)) and
                 isinstance(exc.cmd, (list, tuple)) and
-                exc.cmd[:2] == ["git", "ls-remote"]):
+                tuple(exc.cmd[:2]) == ("git", "ls-remote")):
             return True
         exc = exc.__cause__
     return False
