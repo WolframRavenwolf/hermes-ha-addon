@@ -373,14 +373,62 @@ hermes_runtime_works() {
     runtime_home="${HERMES_HOME:-$PRIMARY_HOME}"
     (
         cd "$SRC_DIR" || exit 1
-        HOME="$runtime_home" HERMES_HOME="$runtime_home" HERMES_PROFILE="" \
+        HERMES_HOME="$runtime_home" HERMES_PROFILE="" \
             "$VENV_DIR/bin/python" -B -c '
 import sys
 expected = tuple(map(int, sys.argv[1].split(".")))
 if sys.version_info[:len(expected)] != expected:
     sys.exit(1)
-import hermes_cli.main
-import hermes_cli.config
+import os
+from pathlib import Path
+
+# A sticky profile selection (written by an interactive `hermes profile use`
+# in a terminal) must not re-home this probe: the add-on owns HERMES_HOME and
+# the gateway masks that selection during its own import
+# (_import_fixed_profile_main). Mirror the masking here so the probe validates
+# the add-on-managed primary home, not whichever profile was last selected.
+_STICKY_FILENAME = "active_profile"
+_roots = {Path.home() / ".hermes"}
+_env_home = os.environ.get("HERMES_HOME", "").strip()
+if _env_home:
+    _roots.add(Path(_env_home).expanduser())
+try:
+    import hermes_constants  # noqa: F401
+    _helper = getattr(hermes_constants, "get_default_hermes_root", None)
+    if callable(_helper):
+        _roots.add(Path(_helper()))
+except Exception:
+    pass
+_sticky = frozenset(root / _STICKY_FILENAME for root in _roots)
+_original_exists = Path.exists
+_original_is_file = Path.is_file
+
+
+def _masked(original, path, *args, **kwargs):
+    try:
+        if Path(str(path)) in _sticky:
+            return False
+    except (TypeError, ValueError):
+        pass
+    return original(path, *args, **kwargs)
+
+
+def _exists_masked(path, *args, **kwargs):
+    return _masked(_original_exists, path, *args, **kwargs)
+
+
+def _is_file_masked(path, *args, **kwargs):
+    return _masked(_original_is_file, path, *args, **kwargs)
+
+
+Path.exists = _exists_masked
+Path.is_file = _is_file_masked
+try:
+    import hermes_cli.main
+    import hermes_cli.config
+finally:
+    Path.exists = _original_exists
+    Path.is_file = _original_is_file
 ' "$1"
     ) || status=$?
     return "$status"
