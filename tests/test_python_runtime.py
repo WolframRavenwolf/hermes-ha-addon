@@ -41,7 +41,8 @@ class PythonRuntimeTests(unittest.TestCase):
         package.mkdir()
         (package / "__init__.py").write_text("")
         # These are real imports. Config fails if the installer probes before
-        # installation, and writes a canary only inside the probe's scratch home.
+        # installation; its config import writes a canary into the probe's home
+        # (now the persistent install home, not a scratch dir).
         (package / "main.py").write_text("from . import config\n")
         (package / "config.py").write_text(textwrap.dedent("""\
             import json
@@ -169,7 +170,6 @@ class PythonRuntimeTests(unittest.TestCase):
 
     def assert_retained_data(self):
         self.assertEqual((self.home / "config.yaml").read_text(), "keep user config\n")
-        self.assertFalse((self.home / "probe-touched").exists())
         self.assertFalse(list(self.source.rglob("__pycache__")))
         self.assertEqual((self.source / "mini-swe-agent/pyproject.toml").read_text(), "# retained source\n")
 
@@ -209,6 +209,11 @@ class PythonRuntimeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] in ("venv", "pip") for call in self.calls()))
         self.assertTrue((self.venv / "old-canary").exists())
+        # The import probe now runs against the persistent install home (not an
+        # empty scratch dir it would have to scaffold a ~400MB runtime into), so
+        # its config canary lands in the real home and the healthy venv (and its
+        # installed runtime) is reused instead of rebuilt on every startup.
+        self.assertTrue((self.home / "probe-touched").exists())
         self.assert_retained_data()
 
     def test_changed_marker_updates_healthy_venv_without_discarding_user_packages(self):

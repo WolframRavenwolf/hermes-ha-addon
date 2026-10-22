@@ -363,13 +363,17 @@ required_python_version() {
 hermes_runtime_works() {
     [ -f "$VENV_DIR/bin/activate" ] && [ -x "$VENV_DIR/bin/hermes" ] && \
         [ -x "$VENV_DIR/bin/python" ] || return 1
-    local probe_dir status=0
-    probe_dir=$(mktemp -d) || return 1
-    # Imports must exercise the installed CLI/config dependencies without writing
-    # bytecode or touching the user's profile, even before initial scaffolding.
+    local runtime_home status=0
+    # Validate against the real, persistent primary home (the runtime the
+    # gateway will actually use), not an empty scratch dir. Pointing a probe
+    # at an empty HERMES_HOME makes the CLI scaffold a brand-new ~400MB
+    # runtime there on every boot (~2m); pointing at the installed home reuses
+    # it and costs ~10s. -B still defeats bytecode writes while we exercise the
+    # same imports the gateway needs.
+    runtime_home="${HERMES_HOME:-$PRIMARY_HOME}"
     (
         cd "$SRC_DIR" || exit 1
-        HOME="$probe_dir" HERMES_HOME="$probe_dir" HERMES_PROFILE="" \
+        HOME="$runtime_home" HERMES_HOME="$runtime_home" HERMES_PROFILE="" \
             "$VENV_DIR/bin/python" -B -c '
 import sys
 expected = tuple(map(int, sys.argv[1].split(".")))
@@ -379,7 +383,6 @@ import hermes_cli.main
 import hermes_cli.config
 ' "$1"
     ) || status=$?
-    rm -rf -- "$probe_dir"
     return "$status"
 }
 
