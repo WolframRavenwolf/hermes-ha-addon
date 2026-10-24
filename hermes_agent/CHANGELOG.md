@@ -4,6 +4,11 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
+## [1.3.10] - 2026-10-24
+
+### Fixed
+- Validate the installed Hermes runtime against the persistent primary home instead of a fresh scratch directory. This avoids repeatedly scaffolding a separate runtime during startup checks. Ignore a saved interactive profile selection during the probe, matching the add-on-managed gateway's fixed home. Thanks to @alreli for #60.
+
 ## [1.3.9] - 2026-10-14
 
 ### Fixed
