@@ -29,7 +29,13 @@ class PythonRuntimeTests(unittest.TestCase):
         self.venv = self.source / "venv"
         self.marker = self.root / "install-marker"
         self.events = self.root / "events.jsonl"
-        self.home = self.root / "user-home"
+        # HOME and HERMES_HOME are distinct, mirroring the container layout
+        # (/config is the shell home; /config/.hermes is the add-on-owned
+        # primary profile home, PROFILE_HOMES[0]). Keeping them apart surfaces
+        # any _HERMES_HOME_/native-home resolution regressions in the probe.
+        self.shell_home = self.root / "config"
+        self.home = self.shell_home / ".hermes"
+        self.shell_home.mkdir(parents=True)
         self.home.mkdir()
         (self.home / "config.yaml").write_text("keep user config\n")
         (self.source / ".git").mkdir(parents=True)
@@ -41,8 +47,26 @@ class PythonRuntimeTests(unittest.TestCase):
         package.mkdir()
         (package / "__init__.py").write_text("")
         # These are real imports. Config fails if the installer probes before
-        # installation, and writes a canary only inside the probe's scratch home.
-        (package / "main.py").write_text("from . import config\n")
+        # installation; its config import writes a canary into the probe's home
+        # (now the persistent install home, not a scratch dir).
+        # This main emulates upstream Hermes's sticky-profile re-homing: at
+        # import it checks for an active_profile and, if found, re-binds to
+        # that profile's home. The probe masks active_profile (Path.is_file
+        # returns False), so a healthy primary venv is kept; unmasked, the
+        # redirect lands on a profile with no healthy runtime and fails.
+        (package / "main.py").write_text(textwrap.dedent("""\
+            import os
+            from pathlib import Path
+            sticky = Path(os.environ['HERMES_HOME']) / 'active_profile'
+            if sticky.is_file():
+                redirected = (Path(os.environ['HERMES_HOME']) / 'active_profile').read_text().strip()
+                # Follow the sticky profile like upstream: resolve its config.
+                # A redirected profile has no healthy runtime here, so the
+                # probe must fail if the mask is missing.
+                from config import state  # noqa: F401
+                raise ImportError('redirected to profile: ' + redirected)
+            from . import config
+            """))
         (package / "config.py").write_text(textwrap.dedent("""\
             import json
             import os
@@ -120,7 +144,7 @@ class PythonRuntimeTests(unittest.TestCase):
             """))
         uv.chmod(0o755)
         self.env = os.environ | {
-            "HOME": str(self.home), "HERMES_HOME": str(self.home),
+            "HOME": str(self.shell_home), "HERMES_HOME": str(self.home),
             "TMPDIR": str(self.root), "PYTHONDONTWRITEBYTECODE": "1",
             "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
             "TEST_VENV": str(self.venv), "TEST_EVENTS": str(self.events),
@@ -169,7 +193,6 @@ class PythonRuntimeTests(unittest.TestCase):
 
     def assert_retained_data(self):
         self.assertEqual((self.home / "config.yaml").read_text(), "keep user config\n")
-        self.assertFalse((self.home / "probe-touched").exists())
         self.assertFalse(list(self.source.rglob("__pycache__")))
         self.assertEqual((self.source / "mini-swe-agent/pyproject.toml").read_text(), "# retained source\n")
 
@@ -203,12 +226,31 @@ class PythonRuntimeTests(unittest.TestCase):
         creation = next((call for call in self.calls() if call[0] == "venv"), [])
         self.assertIn("3.14.1", creation)
 
+    def test_sticky_active_profile_does_not_redirect_the_probe(self):
+        self.existing_venv(version="3.14.2")
+        # A leftover sticky selection (interactive `hermes profile use`) must
+        # not re-home the add-on-managed probe: the probe masks active_profile,
+        # so it still validates the persistent primary home and keeps the
+        # healthy venv instead of being redirected to a broken profile.
+        (self.home / "active_profile").write_text("coder-home\n")
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(call[0] in ("venv", "pip") for call in self.calls()))
+        self.assertTrue((self.venv / "old-canary").exists())
+        self.assertTrue((self.home / "probe-touched").exists())
+        self.assert_retained_data()
+
     def test_matching_healthy_venv_is_kept(self):
         self.existing_venv(version="3.14.2")
         result = self.run_installer()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(call[0] in ("venv", "pip") for call in self.calls()))
         self.assertTrue((self.venv / "old-canary").exists())
+        # The import probe now runs against the persistent install home (not an
+        # empty scratch dir it would have to scaffold a ~400MB runtime into), so
+        # its config canary lands in the real home and the healthy venv (and its
+        # installed runtime) is reused instead of rebuilt on every startup.
+        self.assertTrue((self.home / "probe-touched").exists())
         self.assert_retained_data()
 
     def test_changed_marker_updates_healthy_venv_without_discarding_user_packages(self):

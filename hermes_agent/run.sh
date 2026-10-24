@@ -363,23 +363,74 @@ required_python_version() {
 hermes_runtime_works() {
     [ -f "$VENV_DIR/bin/activate" ] && [ -x "$VENV_DIR/bin/hermes" ] && \
         [ -x "$VENV_DIR/bin/python" ] || return 1
-    local probe_dir status=0
-    probe_dir=$(mktemp -d) || return 1
-    # Imports must exercise the installed CLI/config dependencies without writing
-    # bytecode or touching the user's profile, even before initial scaffolding.
+    local runtime_home status=0
+    # Validate against the real, persistent primary home (the runtime the
+    # gateway will actually use), not an empty scratch dir. Pointing a probe
+    # at an empty HERMES_HOME makes the CLI scaffold a brand-new ~400MB
+    # runtime there on every boot (~2m); pointing at the installed home reuses
+    # it and costs ~10s. -B still defeats bytecode writes while we exercise the
+    # same imports the gateway needs.
+    runtime_home="${HERMES_HOME:-$PRIMARY_HOME}"
     (
         cd "$SRC_DIR" || exit 1
-        HOME="$probe_dir" HERMES_HOME="$probe_dir" HERMES_PROFILE="" \
+        HERMES_HOME="$runtime_home" HERMES_PROFILE="" \
             "$VENV_DIR/bin/python" -B -c '
 import sys
 expected = tuple(map(int, sys.argv[1].split(".")))
 if sys.version_info[:len(expected)] != expected:
     sys.exit(1)
-import hermes_cli.main
-import hermes_cli.config
+import os
+from pathlib import Path
+
+# A sticky profile selection (written by an interactive `hermes profile use`
+# in a terminal) must not re-home this probe: the add-on owns HERMES_HOME and
+# the gateway masks that selection during its own import
+# (_import_fixed_profile_main). Mirror the masking here so the probe validates
+# the add-on-managed primary home, not whichever profile was last selected.
+_STICKY_FILENAME = "active_profile"
+_roots = {Path.home() / ".hermes"}
+_env_home = os.environ.get("HERMES_HOME", "").strip()
+if _env_home:
+    _roots.add(Path(_env_home).expanduser())
+try:
+    import hermes_constants  # noqa: F401
+    _helper = getattr(hermes_constants, "get_default_hermes_root", None)
+    if callable(_helper):
+        _roots.add(Path(_helper()))
+except Exception:
+    pass
+_sticky = frozenset(root / _STICKY_FILENAME for root in _roots)
+_original_exists = Path.exists
+_original_is_file = Path.is_file
+
+
+def _masked(original, path, *args, **kwargs):
+    try:
+        if Path(str(path)) in _sticky:
+            return False
+    except (TypeError, ValueError):
+        pass
+    return original(path, *args, **kwargs)
+
+
+def _exists_masked(path, *args, **kwargs):
+    return _masked(_original_exists, path, *args, **kwargs)
+
+
+def _is_file_masked(path, *args, **kwargs):
+    return _masked(_original_is_file, path, *args, **kwargs)
+
+
+Path.exists = _exists_masked
+Path.is_file = _is_file_masked
+try:
+    import hermes_cli.main
+    import hermes_cli.config
+finally:
+    Path.exists = _original_exists
+    Path.is_file = _original_is_file
 ' "$1"
     ) || status=$?
-    rm -rf -- "$probe_dir"
     return "$status"
 }
 
