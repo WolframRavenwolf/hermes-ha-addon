@@ -42,6 +42,7 @@ MAP
 
 emit_token_maps() {
     local i token
+    [ "${DASHBOARD_AVAILABLE:-true}" = "true" ] || return 0
     for i in "${!PROFILE_DIRS[@]}"; do
         token="${DASHBOARD_TOKENS[$i]}"
         cat <<TOK

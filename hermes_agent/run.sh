@@ -434,6 +434,58 @@ finally:
     return "$status"
 }
 
+resolve_dashboard_build_path() {
+    local build_path=""
+    if [ -x "$VENV_DIR/bin/python" ]; then
+        build_path=$("$VENV_DIR/bin/python" -B -c '
+import os
+try:
+    from pm import ensure
+except ImportError:
+    try:
+        from hermes_constants import find_node_executable
+    except (ImportError, AttributeError):
+        raise SystemExit(0)
+    node = find_node_executable("node")
+    if node:
+        print(os.path.dirname(node) + os.pathsep + os.environ["PATH"])
+else:
+    print(ensure("npm").env["PATH"])
+') || return 1
+    fi
+    printf '%s\n' "${build_path:-$PATH}"
+}
+
+build_dashboard_frontend() {
+    local build_path build_log status
+    build_log=$(mktemp) || {
+        echo "[run] WARNING: could not create dashboard build log" >&2
+        return 1
+    }
+    if (
+        build_path=$(resolve_dashboard_build_path) || exit 1
+        export PATH="$build_path"
+        cd "$SRC_DIR/web" || exit 1
+        npm install --silent || exit 1
+        if [ -f "$SRC_DIR/scripts/build/web.mjs" ]; then
+            cd "$SRC_DIR" || exit 1
+            node scripts/build/web.mjs
+        else
+            npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir
+        fi
+    ) >"$build_log" 2>&1; then
+        tail -n 5 "$build_log"
+        rm -f "$build_log"
+        return 0
+    else
+        status=$?
+        echo "[run] Dashboard frontend build failed; last 20 output lines:" >&2
+        tail -n 20 "$build_log" >&2
+        rm -f "$build_log"
+        return "$status"
+    fi
+}
+
 install_hermes_core() {
     mkdir -p "$(dirname "$SRC_DIR")"
 
@@ -587,7 +639,7 @@ install_hermes_core() {
 
         if [ "$rebuild" = "true" ] || [ ! -d "$SRC_DIR/hermes_cli/web_dist/assets" ]; then
             echo "[run] Building dashboard frontend..."
-            if (cd "$SRC_DIR/web" && npm install --silent 2>&1 | tail -3 && npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir 2>&1 | tail -3); then
+            if build_dashboard_frontend; then
                 echo "[run] Dashboard frontend built"
             else
                 echo "[run] Warning: dashboard frontend build failed (dashboard will not be available)"
@@ -844,18 +896,21 @@ build_profiles_json() {
 }
 PROFILES_JSON="$(build_profiles_json)"
 
-cp /var/www/landing.html.tpl /var/www/landing.html
-# PROFILES_JSON contains JSON; use a different delimiter so braces don't collide
-PROFILES_JSON_ESC=$(printf '%s' "$PROFILES_JSON" | sed 's|[\\/&]|\\&|g')
-sed -i \
-    -e "s|%%HERMES_VERSION%%|${HERMES_VERSION}|g" \
-    -e "s|%%ADDON_SLUG%%|${ADDON_SLUG}|g" \
-    -e "s|%%SHOW_TERMINAL%%|${SHOW_TERMINAL}|g" \
-    -e "s|%%SHOW_DASHBOARD%%|${SHOW_DASHBOARD}|g" \
-    -e "s|%%SHOW_DASHBOARD_PORTS%%|${SHOW_DASHBOARD_PORTS}|g" \
-    -e "s|%%SHOW_API%%|${SHOW_API}|g" \
-    -e "s|%%PROFILES_JSON%%|${PROFILES_JSON_ESC}|g" \
-    /var/www/landing.html
+render_landing_page() {
+    local profiles_json_esc
+    cp /var/www/landing.html.tpl /var/www/landing.html
+    # PROFILES_JSON contains JSON; use a different delimiter so braces don't collide.
+    profiles_json_esc=$(printf '%s' "$PROFILES_JSON" | sed 's|[\\/&]|\\&|g')
+    sed -i \
+        -e "s|%%HERMES_VERSION%%|${HERMES_VERSION}|g" \
+        -e "s|%%ADDON_SLUG%%|${ADDON_SLUG}|g" \
+        -e "s|%%SHOW_TERMINAL%%|${SHOW_TERMINAL}|g" \
+        -e "s|%%SHOW_DASHBOARD%%|${SHOW_DASHBOARD}|g" \
+        -e "s|%%SHOW_DASHBOARD_PORTS%%|${SHOW_DASHBOARD_PORTS}|g" \
+        -e "s|%%SHOW_API%%|${SHOW_API}|g" \
+        -e "s|%%PROFILES_JSON%%|${profiles_json_esc}|g" \
+        /var/www/landing.html
+}
 
 echo "[run] Nginx configured (ingress: $INGRESS_PORT, HTTP: $HTTP_PORT, HTTPS: $HTTPS_PORT)"
 
@@ -1040,17 +1095,19 @@ inject_dashboard_token_for_profile() {
     fi
     echo "[run] [$name] Waiting for dashboard token..."
     local token=""
-    for _ in $(seq 1 15); do
-        token=$(curl -s "http://127.0.0.1:${port}/" 2>/dev/null \
+    for attempt in $(seq 1 30); do
+        token=$(curl --connect-timeout 2 --max-time 3 -s "http://127.0.0.1:${port}/" 2>/dev/null \
             | grep -oP '__HERMES_SESSION_TOKEN__="\K[^"]+' || true)
         if [ -n "$token" ]; then
             break
         fi
-        sleep 2
+        if [ "$attempt" -lt 30 ]; then
+            sleep 2
+        fi
     done
     if [ -z "$token" ]; then
-        echo "[run] [$name] Warning: could not read dashboard token (dashboard API auth may not work)"
-        token="UNAVAILABLE"
+        echo "[run] [$name] Warning: dashboard token unavailable after 30 attempts; dashboard routes will be disabled"
+        return 1
     fi
     # shellcheck disable=SC2034  # consumed by emit_token_maps / emit_profile_locations in nginx-render.sh
     DASHBOARD_TOKENS[$i]="$token"
@@ -1264,8 +1321,16 @@ done
 desktop_backend_start
 
 for i in "${!PROFILE_DIRS[@]}"; do
-    inject_dashboard_token_for_profile "$i"
+    if ! inject_dashboard_token_for_profile "$i"; then
+        DASHBOARD_AVAILABLE="false"
+        SHOW_DASHBOARD="false"
+        SHOW_DASHBOARD_PORTS="false"
+        echo "[run] Dashboard disabled after token acquisition failure; other add-on services will continue"
+        break
+    fi
 done
+
+render_landing_page
 
 # Re-render nginx now that we have real dashboard tokens
 render_nginx_config
