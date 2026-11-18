@@ -463,15 +463,37 @@ build_dashboard_frontend() {
         return 1
     }
     if (
-        build_path=$(resolve_dashboard_build_path) || exit 1
-        export PATH="$build_path"
-        cd "$SRC_DIR/web" || exit 1
-        npm install --silent || exit 1
-        if [ -f "$SRC_DIR/scripts/build/web.mjs" ]; then
-            cd "$SRC_DIR" || exit 1
-            node scripts/build/web.mjs
+        cd "$SRC_DIR" || exit 1
+        if [ -f pnpm-workspace.yaml ]; then
+            # Workspace dependencies and the compatible pnpm/Node environment
+            # belong to Hermes. Its launch preparer also preserves other UIs.
+            "$VENV_DIR/bin/python" -B -c '
+from pathlib import Path
+import subprocess
+import sys
+from hermes_cli.source_build import source_build_env, prepare_launch_dependencies, build_source_web
+
+try:
+    root = Path.cwd()
+    env = source_build_env()
+    prepare_launch_dependencies(root, env=env)
+    build_source_web(root, env=env)
+except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+    # Keep the preparer/compiler output in the bounded log, not a traceback.
+    print(f"Dashboard frontend build failed: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+'
         else
-            npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir
+            build_path=$(resolve_dashboard_build_path) || exit 1
+            export PATH="$build_path"
+            cd "$SRC_DIR/web" || exit 1
+            npm install || exit 1
+            if [ -f "$SRC_DIR/scripts/build/web.mjs" ]; then
+                cd "$SRC_DIR" || exit 1
+                node scripts/build/web.mjs
+            else
+                npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir
+            fi
         fi
     ) >"$build_log" 2>&1; then
         tail -n 5 "$build_log"

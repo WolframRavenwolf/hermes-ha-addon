@@ -9,7 +9,17 @@ import sys
 import urllib.error
 import urllib.request
 
-import yaml
+try:
+    from yaml import YAMLError, safe_load
+except ModuleNotFoundError as exc:
+    if exc.name != "yaml":
+        raise
+    # Current Hermes venvs ship ruamel.yaml instead of PyYAML. Keep using
+    # that venv: the selected source's native resolver also needs its deps.
+    from ruamel.yaml import YAML, YAMLError
+    _yaml = YAML(typ="safe")
+    _yaml.version = (1, 1)
+    safe_load = _yaml.load
 
 OFFICIAL = "https://github.com/NousResearch/hermes-agent.git"
 TAG = re.compile(r"v(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
@@ -28,7 +38,7 @@ def choice(source, homes):
         config = Path(home) / "config.yaml"
         if not config.is_file():
             continue
-        data = yaml.safe_load(config.read_text(encoding="utf-8"))
+        data = safe_load(config.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             continue
         update = data.get("update")
@@ -121,6 +131,19 @@ def hold_update(source, exc):
           file=sys.stderr)
 
 
+def hold_local_changes(source):
+    # Generated patches and user edits share this checkout; neither is disposable.
+    # Do not turn an already conflicted index into a successful startup decision.
+    if git(source, "ls-files", "--unmerged"):
+        raise ValueError("Source checkout has unresolved Git conflicts; resolve them before updating")
+    if not git(source, "status", "--porcelain", "--untracked-files=normal"):
+        return False
+    hold_update(source, ValueError(
+        f"local source changes in {source}; inspect git status there and reconcile "
+        "the changes before retrying the update (auto_update: false disables retries)"))
+    return True
+
+
 def update(source, homes):
     channel, explicit = choice(source, homes)
     try:
@@ -171,7 +194,9 @@ def update(source, homes):
             if subprocess.run(["git", "merge-base", "--is-ancestor", head, target.commit],
                               cwd=source, check=False).returncode != 0:
                 raise ValueError("Cannot prove a forward-only stable update; source unchanged")
-        # Git refuses a checkout that would overwrite local source edits.
+        # Hold before mutation rather than stash/reset either managed or user edits.
+        if hold_local_changes(source):
+            return
         if subprocess.run(["git", "merge-base", "--is-ancestor", head, target.commit],
                           cwd=source, check=False).returncode == 0:
             git(source, "merge", "--ff-only", target.commit)
@@ -184,6 +209,8 @@ def update(source, homes):
             git(source, "fetch", "--no-tags", "origin", target.branch)
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
             hold_update(source, exc)
+            return
+        if hold_local_changes(source):
             return
         git(source, "merge", "--ff-only", "FETCH_HEAD")
     else:
@@ -204,7 +231,7 @@ def main():
             print(f"{ref}\t{sha}")
         else:
             update(args.source, args.home)
-    except (OSError, ValueError, subprocess.SubprocessError, yaml.YAMLError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError, YAMLError) as exc:
         print(f"[run] FATAL: source channel: {exc}", file=sys.stderr)
         return 1
     return 0

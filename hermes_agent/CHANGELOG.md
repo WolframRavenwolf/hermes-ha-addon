@@ -4,6 +4,17 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
+## [1.3.12] - 2026-11-18
+
+### Fixed
+- Read saved source-channel choices with ruamel.yaml when the selected Hermes environment lacks PyYAML, keeping the native resolver in its compatible Python environment. Addresses #65.
+- Hold source updates with a warning when local changes exist, preserving the checkout and allowing startup with the retained source. The update is deferred; generated patches and user edits are not discarded. Existing Git conflicts and invalid source targets still fail explicitly. Addresses #64.
+- Prepare pnpm workspace dependencies and compile the dashboard through the selected checkout's native source-build helpers. Retain the legacy frontend path and expose package-manager errors in the bounded build log. Addresses #61.
+
+### Verification
+- Isolated unit discovery: 211 passed, 3 skipped (Linux prctl, local nginx syntax and opt-in Docker nginx runtime checks). The 49 source-selector/build/readiness tests passed separately.
+- The production dashboard helper completed a real dependency installation and web build against official Hermes v0.23.1 in an isolated macOS checkout, producing index.html and 46 assets. No container, Raspberry Pi or Home Assistant Supervisor test was performed.
+
 ## [1.3.11] - 2026-11-09
 
 ### Fixed
