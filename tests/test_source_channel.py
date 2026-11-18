@@ -383,14 +383,113 @@ class SourceChannelTests(unittest.TestCase):
                 self.module.update(self.source, [self.primary, self.secondary])
         self.assertEqual(git(self.source, "rev-parse", "HEAD"), self.release)
 
-    def test_new_release_refusing_to_overwrite_local_change(self):
-        self.record(self.secondary, "main")
+    def checkout_state(self):
+        return {
+            "head": git(self.source, "rev-parse", "HEAD"),
+            "status": git(self.source, "status", "--porcelain", "--untracked-files=all"),
+            "index": git(self.source, "ls-files", "--stage"),
+            "diff": git(self.source, "diff", "--binary", "HEAD"),
+            "files": {str(path.relative_to(self.source)): path.read_bytes()
+                      for path in self.source.rglob("*")
+                      if path.is_file() and ".git" not in path.relative_to(self.source).parts},
+        }
+
+    def assert_held_checkout(self, before, code, error, output):
+        self.assertEqual(code, 0, error)
+        self.assertIn("WARNING: source update held", error)
+        self.assertIn("local", error)
+        self.assertIn("git status", error)
+        self.assertIn("existing source retained", error)
+        self.assertEqual(output, "", "a held update must not announce update success")
+        self.assertEqual(self.checkout_state(), before)
+        self.assertEqual(git(self.source, "ls-files", "--unmerged"), "")
+        self.assertFalse((self.source / ".git/MERGE_HEAD").exists())
+        self.assertFalse((self.source / ".git/rebase-merge").exists())
+        self.assertFalse((self.source / ".git/rebase-apply").exists())
+        self.assertEqual(git(self.source, "stash", "list"), "")
+
+    def test_new_release_holds_untracked_collision_at_startup_boundary(self):
+        self.record(self.primary, "main")
         (self.source / "next.txt").write_text("my local file\n")
+        before = self.checkout_state()
         with patch.object(self.module, "native_target", side_effect=self.resolve):
-            with self.assertRaises(subprocess.CalledProcessError):
-                self.module.update(self.source, [self.primary, self.secondary])
-        self.assertEqual(git(self.source, "rev-parse", "HEAD"), self.release)
-        self.assertEqual((self.source / "next.txt").read_text(), "my local file\n")
+            code, error, output = self.invoke()
+        self.assert_held_checkout(before, code, error, output)
+
+    def test_dirty_stable_update_retains_generated_user_and_staged_edits(self):
+        from types import SimpleNamespace
+        # The upstream release changes the same tracked file as the local patch.
+        (self.work / "file.txt").write_text("new upstream version\n")
+        git(self.work, "add", "file.txt")
+        git(self.work, "commit", "-m", "upstream changes patched file")
+        target_commit = git(self.work, "rev-parse", "HEAD")
+        git(self.work, "push", "origin", "main")
+        (self.source / "file.txt").write_text("add-on generated patch\n")
+        git(self.source, "add", "file.txt")
+        (self.source / "file.txt").write_text("add-on generated patch plus user edit\n")
+        (self.source / "user.txt").write_text("keep this user file\n")
+        before = self.checkout_state()
+        target = SimpleNamespace(commit=target_commit, branch=None, ahead=False)
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, output = self.invoke()
+        self.assert_held_checkout(before, code, error, output)
+
+    def test_dirty_explicit_downgrade_retains_current_checkout(self):
+        git(self.source, "merge", "--ff-only", self.newer)
+        self.record(self.primary, "stable")
+        (self.source / "next.txt").write_text("user edit that checkout would delete\n")
+        before = self.checkout_state()
+        with patch.object(self.module, "native_target", side_effect=self.resolve):
+            code, error, output = self.invoke()
+        self.assert_held_checkout(before, code, error, output)
+
+    def test_unrelated_local_edits_conservatively_hold_update(self):
+        from types import SimpleNamespace
+        (self.source / "file.txt").write_text("local user edit\n")
+        before = self.checkout_state()
+        target = SimpleNamespace(commit=self.newer, branch=None, ahead=False)
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, output = self.invoke()
+        self.assert_held_checkout(before, code, error, output)
+
+    def test_dirty_checkout_does_not_mask_invalid_target(self):
+        from types import SimpleNamespace
+        (self.source / "file.txt").write_text("local user edit\n")
+        before = self.checkout_state()
+        target = SimpleNamespace(commit="not-a-commit", branch=None, ahead=False)
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, _ = self.invoke()
+        self.assertEqual(code, 1)
+        self.assertIn("invalid commit", error)
+        self.assertNotIn("update held", error)
+        self.assertEqual(self.checkout_state(), before)
+
+    def test_preexisting_unmerged_index_remains_fatal(self):
+        from types import SimpleNamespace
+        # Build a real conflict in this disposable checkout, never in the add-on repo.
+        git(self.source, "config", "user.email", "test@example.invalid")
+        git(self.source, "config", "user.name", "Test")
+        git(self.source, "checkout", "-b", "local")
+        (self.source / "file.txt").write_text("local commit\n")
+        git(self.source, "add", "file.txt")
+        git(self.source, "commit", "-m", "local commit")
+        (self.work / "file.txt").write_text("upstream commit\n")
+        git(self.work, "add", "file.txt")
+        git(self.work, "commit", "-m", "upstream commit")
+        git(self.work, "push", "origin", "main")
+        git(self.source, "fetch", "origin", "main")
+        conflict = subprocess.run(["git", "merge", "--no-edit", "FETCH_HEAD"],
+                                  cwd=self.source, capture_output=True)
+        self.assertNotEqual(conflict.returncode, 0)
+        self.assertNotEqual(git(self.source, "ls-files", "--unmerged"), "")
+        self.record(self.primary, "main")
+        before = self.checkout_state()
+        target = SimpleNamespace(commit=None, branch="main", ahead=False)
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, _ = self.invoke()
+        self.assertEqual(code, 1)
+        self.assertNotIn("update held", error)
+        self.assertEqual(self.checkout_state(), before)
 
     def test_published_release_rejects_prerelease_metadata(self):
         import io

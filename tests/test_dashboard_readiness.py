@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import textwrap
 from typing import Optional
@@ -52,9 +53,10 @@ exit 0
 
     def run_build(self, *, resolver: str, node: Path, native_builder: bool) -> subprocess.CompletedProcess:
         (self.source / "web").mkdir(parents=True, exist_ok=True)
-        (self.source / "web/package.json").write_text("{}\n")
+        if not (self.source / "web/package.json").exists():
+            (self.source / "web/package.json").write_text("{}\n")
         if native_builder:
-            (self.source / "scripts/build").mkdir(parents=True)
+            (self.source / "scripts/build").mkdir(parents=True, exist_ok=True)
             (self.source / "scripts/build/web.mjs").write_text("// test fixture\n")
         executable(self.venv_bin / "python", resolver)
         script = "\n".join((
@@ -112,7 +114,7 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
             self.node_log.read_text().splitlines(),
-            [f"npm install --silent via {managed_node}", "scripts/build/web.mjs"],
+            [f"npm install via {managed_node}", "scripts/build/web.mjs"],
         )
         self.assertIn("native build complete", result.stdout)
 
@@ -126,7 +128,7 @@ esac
 
         self.assertEqual(result.returncode, 0, result.stderr)
         log = self.node_log.read_text().splitlines()
-        self.assertEqual(log[0], "npm install --silent")
+        self.assertEqual(log[0], "npm install")
         self.assertEqual(log[1], "npx vite build --outDir ../hermes_cli/web_dist --emptyOutDir")
 
     def test_build_failure_returns_failure_and_keeps_bounded_diagnostics(self):
@@ -150,6 +152,113 @@ esac
         self.assertIn("build diagnostic 35", result.stderr)
         self.assertNotIn("build diagnostic 1\n", result.stderr)
         self.assertLessEqual(len(result.stderr.splitlines()), 24)
+
+    def workspace_fixture(self):
+        """Model the upstream package API, leaving the add-on's Python adapter real.
+
+        Signatures match Hermes v0.23.1 hermes_cli/source_build.py. Preparation
+        must precede compilation, and the complete PM environment must survive.
+        """
+        (self.source / "pnpm-workspace.yaml").write_text("packages:\n  - web\n  - apps/shared\n")
+        (self.source / "web").mkdir()
+        (self.source / "web/package.json").write_text(
+            '{"dependencies":{"@hermes/shared":"workspace:*"}}\n'
+        )
+        package = self.source / "hermes_cli"
+        package.mkdir()
+        (package / "__init__.py").write_text("")
+        (package / "source_build.py").write_text(textwrap.dedent('''\
+            import os
+            from pathlib import Path
+
+            def source_build_env(base_env=None, *, explicit=False, verify=True):
+                return {**os.environ, "NATIVE_PM_ENV": "pnpm-and-node"}
+
+            def prepare_launch_dependencies(project_root, *, env):
+                assert project_root == Path.cwd()
+                assert env["NATIVE_PM_ENV"] == "pnpm-and-node"
+                if env.get("FAIL_PREPARATION"):
+                    raise RuntimeError("ERR_PNPM_FETCH_503 registry unavailable")
+                # Unlike npm, the native preparer links the shared workspace.
+                deps = project_root / "web/node_modules/@hermes/shared"
+                deps.mkdir(parents=True, exist_ok=True)
+                (deps / "package.json").write_text('{"name":"@hermes/shared"}')
+                with open(env["NODE_LOG"], "a") as log:
+                    log.write("native preparation\\n")
+
+            def build_source_web(project_root, *, env, icons=None):
+                assert project_root == Path.cwd()
+                assert env["NATIVE_PM_ENV"] == "pnpm-and-node"
+                assert (project_root / "web/node_modules/@hermes/shared/package.json").is_file()
+                with open(env["NODE_LOG"], "a") as log:
+                    log.write("native compilation\\n")
+                if env.get("FAIL_COMPILATION"):
+                    for n in range(35):
+                        print(f"TypeScript diagnostic {n}", flush=True)
+                    raise RuntimeError("TypeScript build failed")
+                out = project_root / "hermes_cli/web_dist"
+                out.mkdir(exist_ok=True)
+                (out / "index.html").write_text("built workspace frontend")
+            '''))
+        executable(self.bin / "npm", """#!/bin/sh
+printf 'npm %s\\n' "$*" >> "$NODE_LOG"
+case " $* " in
+  *' --silent '*) ;;
+  *) printf 'npm error EUNSUPPORTEDPROTOCOL workspace:* (@hermes/shared)\\n' >&2 ;;
+esac
+exit 19
+""")
+        return f'#!/bin/sh\nexec "{sys.executable}" "$@"\n'
+
+    def test_workspace_checkout_prepares_before_build_on_fresh_and_retained_trees(self):
+        resolver = self.workspace_fixture()
+        for retained in (False, True):
+            with self.subTest(retained=retained):
+                # A retained tree still needs upstream's freshness/repair check.
+                result = self.run_build(resolver=resolver, node=self.bin / "node", native_builder=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    (self.source / "hermes_cli/web_dist/index.html").read_text(),
+                    "built workspace frontend",
+                )
+        self.assertEqual(self.node_log.read_text().splitlines(),
+                         ["native preparation", "native compilation"] * 2)
+
+    def test_native_preparation_failure_is_visible_and_stops_compilation(self):
+        resolver = self.workspace_fixture()
+        with mock.patch.dict(os.environ, {"FAIL_PREPARATION": "1"}):
+            result = self.run_build(resolver=resolver, node=self.bin / "node", native_builder=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ERR_PNPM_FETCH_503 registry unavailable", result.stderr)
+        self.assertNotIn("Traceback", result.stderr, "tracebacks must not displace package diagnostics")
+        self.assertFalse((self.source / "hermes_cli/web_dist").exists())
+        self.assertFalse(self.node_log.exists(), "failed native preparation must not fall back to npm")
+
+    def test_native_compilation_failure_keeps_bounded_diagnostics(self):
+        resolver = self.workspace_fixture()
+        with mock.patch.dict(os.environ, {"FAIL_COMPILATION": "1"}):
+            result = self.run_build(resolver=resolver, node=self.bin / "node", native_builder=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("TypeScript build failed", result.stderr)
+        self.assertIn("TypeScript diagnostic 34", result.stderr)
+        self.assertNotIn("TypeScript diagnostic 0\n", result.stderr)
+        self.assertLessEqual(len(result.stderr.splitlines()), 21)
+        self.assertFalse((self.source / "hermes_cli/web_dist").exists())
+
+    def test_legacy_npm_failure_exposes_error_and_stops_compilation(self):
+        executable(self.bin / "npm", """#!/bin/sh
+case " $* " in
+  *' --silent '*) ;;
+  *) printf 'npm error EBADENGINE incompatible toolchain\\n' >&2 ;;
+esac
+exit 19
+""")
+        node = executable(self.bin / "node", "#!/bin/sh\nexit 0\n")
+        executable(self.bin / "npx", "#!/bin/sh\nprintf 'unexpected compilation\\n' >> \"$NODE_LOG\"\n")
+        result = self.run_build(resolver="#!/bin/sh\nexit 0\n", node=node, native_builder=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("npm error EBADENGINE incompatible toolchain", result.stderr)
+        self.assertFalse(self.node_log.exists())
 
 
 class DashboardTokenReadinessTests(unittest.TestCase):
