@@ -107,7 +107,7 @@ class DesktopBackendLauncherTests(unittest.TestCase):
                             "username": os.environ.get("HERMES_DASHBOARD_BASIC_AUTH_USERNAME"),
                             "password_present": "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD" in os.environ,
                             "password_hash": os.environ.get("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"),
-                            "secret_present": "HERMES_DASHBOARD_BASIC_AUTH_SECRET" in os.environ,
+                            "secret": os.environ.get("HERMES_DASHBOARD_BASIC_AUTH_SECRET"),
                         }
                         Path(os.environ["RESULT_FILE"]).write_text(json.dumps(payload))
                         return 0
@@ -127,6 +127,7 @@ class DesktopBackendLauncherTests(unittest.TestCase):
             env.update(
                 {
                     "PYTHONPATH": str(root),
+                    "HERMES_HOME": str(root),
                     "RESULT_FILE": str(result_file),
                 }
             )
@@ -180,8 +181,132 @@ class DesktopBackendLauncherTests(unittest.TestCase):
             self.assertEqual(payload["username"], "hermes")
             self.assertFalse(payload["password_present"])
             self.assertEqual(payload["password_hash"], "fake$" + password.encode().hex())
-            self.assertFalse(payload["secret_present"])
+            self.assertTrue(payload["secret"])
+            self.assertNotEqual(payload["secret"], "wrong-secret")
             self.assertNotIn(password, " ".join(payload["argv_at_import"]))
+
+
+class DesktopBackendAuthPersistenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.home = self.root / "profile"
+        self.home.mkdir()
+        self.state = self.home / ".ha-desktop-auth.json"
+        package = self.root / "hermes_cli"
+        package.mkdir()
+        (package / "__init__.py").write_text("")
+        (package / "main.py").write_text(textwrap.dedent("""
+            import json
+            import os
+
+            def main():
+                print(json.dumps({
+                    key.removeprefix("HERMES_DASHBOARD_BASIC_AUTH_").lower(): value
+                    for key, value in os.environ.items()
+                    if key.startswith("HERMES_DASHBOARD_BASIC_AUTH_")
+                }))
+        """))
+        basic = self.root / "plugins" / "dashboard_auth" / "basic"
+        basic.mkdir(parents=True)
+        for path in (basic.parent.parent, basic.parent):
+            (path / "__init__.py").write_text("")
+        self.basic_file = basic / "__init__.py"
+        # A salted, non-reversible stand-in for the upstream plugin, without
+        # requiring Hermes or its dependencies in the add-on test environment.
+        self.basic_file.write_text(textwrap.dedent("""
+            import hashlib
+            import hmac
+            import secrets
+
+            def digest(password, salt):
+                return hashlib.scrypt(password.encode(), salt=salt.encode(),
+                                      n=1024, r=8, p=1).hex()
+
+            def hash_password(password):
+                salt = secrets.token_hex(16)
+                return 'test-scrypt$' + salt + '$' + digest(password, salt)
+
+            def _verify_password(password, encoded):
+                scheme, salt, expected = encoded.split('$')
+                return scheme == 'test-scrypt' and hmac.compare_digest(
+                    digest(password, salt), expected)
+        """))
+
+    def launch(self, password=" persistent password with spaces ") -> dict:
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith("HERMES_DASHBOARD_BASIC_AUTH_"):
+                del env[key]
+        env.update(PYTHONPATH=str(self.root), HERMES_HOME=str(self.home))
+        result = subprocess.run(
+            [sys.executable, "-B", str(DESKTOP_LAUNCHER)],
+            input=password + "\n", text=True, capture_output=True, env=env,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(password, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertNotIn("password", payload)
+        return payload
+
+    def test_unchanged_password_reuses_hash_and_signing_secret_across_processes(self) -> None:
+        first = self.launch()
+        second = self.launch()
+        self.assertEqual(first["password_hash"], second["password_hash"])
+        self.assertTrue(first.get("secret"))
+        self.assertEqual(first["secret"], second["secret"])
+        stored = json.loads(self.state.read_text())
+        self.assertEqual(stored, {
+            "password_hash": first["password_hash"], "secret": first["secret"],
+        })
+        self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)
+
+    def test_password_change_atomically_replaces_private_state(self) -> None:
+        first = self.launch()
+        self.assertTrue(self.state.exists(), "auth state was not persisted")
+        # An open descriptor must still see the old file after replacement.
+        with self.state.open() as previous:
+            changed = self.launch("changed password")
+            self.assertEqual(json.load(previous)["password_hash"], first["password_hash"])
+        self.assertNotEqual(first["password_hash"], changed["password_hash"])
+        self.assertEqual(self.launch("changed password"), changed)
+        self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.home.iterdir()), [self.state])
+
+    def test_malformed_state_is_replaced_without_blocking_startup(self) -> None:
+        for content in (b"not json", b"[]", b"\xff", b'{"password_hash": 42}',
+                        b'{"password_hash": "invalid", "secret": "invalid"}'):
+            with self.subTest(content=content):
+                self.state.write_bytes(content)
+                self.state.chmod(0o644)
+                result = self.launch()
+                self.assertNotEqual(self.state.read_bytes(), content,
+                                    "malformed auth state was not replaced")
+                self.assertEqual(json.loads(self.state.read_text()), {
+                    "password_hash": result["password_hash"], "secret": result.get("secret"),
+                })
+                self.assertEqual(self.state.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(self.launch(), result)
+
+    def test_missing_verifier_replaces_hash_without_blocking_startup(self) -> None:
+        first = self.launch()
+        self.basic_file.write_text(self.basic_file.read_text().replace(
+            "def _verify_password(", "def unavailable_verify_password("))
+        second = self.launch()
+        self.assertNotEqual(first["password_hash"], second["password_hash"])
+        self.assertTrue(self.state.exists(), "replacement hash was not persisted")
+        self.assertEqual(json.loads(self.state.read_text())["password_hash"], second["password_hash"])
+
+    def test_unreadable_unwritable_state_keeps_password_auth_working(self) -> None:
+        # A directory at the file path reliably simulates read/replace failure,
+        # including when the suite is run as root.
+        self.state.mkdir()
+        result = self.launch()
+        self.assertTrue(result["password_hash"])
+        self.assertTrue(result.get("secret"))
+        self.assertEqual(list(self.home.iterdir()), [self.state])
 
 
 class DesktopBackendShellTests(unittest.TestCase):

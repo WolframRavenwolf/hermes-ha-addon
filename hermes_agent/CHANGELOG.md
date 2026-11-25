@@ -4,6 +4,15 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
+## [1.3.13] - 2026-11-25
+
+### Fixed
+- Keep Hermes Desktop logins across add-on restarts while `access_password` stays unchanged. Since Hermes v0.23.2, Desktop sessions are bound to the configured password hash and signing secret; the launcher created a freshly salted hash on every start and supplied no stable secret, so each restart ended all sessions. It now stores the verified hash and a random signing secret in the primary profile's Hermes home (normally `/config/.hermes/.ha-desktop-auth.json`, mode 0600, no plaintext). Changing the password or logging out still ends sessions. The first start after this update requires one new login. Addresses #68.
+
+### Verification
+- Isolated unit discovery: 216 passed, 3 skipped (Linux prctl, local nginx syntax and opt-in Docker nginx runtime checks).
+- A round-trip against the official Hermes v0.23.3 authentication code kept access and refresh tokens valid across a simulated restart, while logout and a password change still invalidated them; the previous launcher lost the session in the same check. No container, Desktop client or Home Assistant Supervisor test was performed.
+
 ## [1.3.12] - 2026-11-18
 
 ### Fixed
