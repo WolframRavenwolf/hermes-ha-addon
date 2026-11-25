@@ -3,9 +3,14 @@
 
 from __future__ import annotations
 
+import base64
 from importlib import import_module
+import json
 import os
+from pathlib import Path
+import secrets
 import sys
+import tempfile
 
 
 _BASIC_AUTH_ENV_KEYS = (
@@ -30,7 +35,60 @@ def _read_password() -> str:
     return password
 
 
+def _auth_state(path: Path, password: str, basic) -> tuple[str, str]:
+    """Keep both inputs to Hermes' credential-bound session key across restarts."""
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        password_hash, secret = stored["password_hash"], stored["secret"]
+        if (isinstance(password_hash, str) and isinstance(secret, str)
+                and len(base64.b64decode(secret, validate=True)) == 32
+                and basic._verify_password(password, password_hash)):
+            path.chmod(0o600)
+            return password_hash, secret
+    except Exception:
+        # Missing/corrupt/unreadable state or an unavailable upstream verifier:
+        # require a fresh login rather than trusting an unverified cached hash.
+        pass
+
+    try:
+        password_hash = basic.hash_password(password)
+    except Exception as exc:
+        raise SystemExit(
+            "[desktop-backend] FATAL: could not hash the access password "
+            f"({type(exc).__name__})"
+        ) from exc
+    secret = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+    temporary = None
+    try:
+        # Same-directory replacement is atomic; NamedTemporaryFile is 0600.
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=path.name + ".", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump({"password_hash": password_hash, "secret": secret}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except OSError as exc:
+        print(
+            "[desktop-backend] WARNING: could not persist login state; "
+            f"sessions will end on restart ({type(exc).__name__})",
+            file=sys.stderr,
+        )
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return password_hash, secret
+
+
 def main() -> int:
+    # desktop-backend.sh supplies the primary profile on persistent /config.
+    # Capture it before Hermes loads any environment layers, outside its source.
+    auth_state_path = Path(os.environ["HERMES_HOME"]) / ".ha-desktop-auth.json"
     serve_args = sys.argv[1:]
     # Pin the official machine-level backend before Hermes' import-time profile
     # selection. This avoids a later named-profile re-exec that would bypass
@@ -60,17 +118,8 @@ def main() -> int:
     # process that gets replaced, leaving the relaunched process to hit EOF.
     password = _read_password()
 
-    hash_password = import_module(
-        "plugins.dashboard_auth.basic"
-    ).hash_password
-
-    try:
-        password_hash = hash_password(password)
-    except Exception as exc:
-        raise SystemExit(
-            "[desktop-backend] FATAL: could not hash the access password "
-            f"({type(exc).__name__})"
-        ) from exc
+    basic = import_module("plugins.dashboard_auth.basic")
+    password_hash, secret = _auth_state(auth_state_path, password, basic)
 
     # The add-on option is authoritative for this opt-in listener. Remove any
     # colliding Hermes-loaded auth settings, then configure the normal Basic
@@ -80,7 +129,8 @@ def main() -> int:
         os.environ.pop(key, None)
     os.environ["HERMES_DASHBOARD_BASIC_AUTH_USERNAME"] = "hermes"
     os.environ["HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"] = password_hash
-    del password, password_hash
+    os.environ["HERMES_DASHBOARD_BASIC_AUTH_SECRET"] = secret
+    del password, password_hash, secret
 
     result = hermes_main.main()
     return result if isinstance(result, int) else 0
