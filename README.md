@@ -44,6 +44,7 @@ Add-on-level options are configured in the Home Assistant UI (Settings > Apps > 
 | `enable_terminal`     | `false`                                            | Enable web terminal on direct HTTP/HTTPS ports                                  |
 | `enable_api`          | `false`                                            | Enable the OpenAI-compatible API server; requires a non-placeholder access password of at least 16 safe ASCII characters |
 | `enable_desktop_backend` | `false`                                         | Enable the official Hermes Desktop remote backend on container port 9119        |
+| `enable_webapp`       | `false`                                            | Enable the Hermes Webapp (Desktop workspace in a browser) on container port 9120 |
 | `access_password`     |                                                    | Password for HTTP/HTTPS, API, and Hermes Desktop access (username: `hermes`); enabled API keys use printable ASCII excluding single-quote, backslash, and dotenv interpolation syntax |
 | `env_vars`            | `OPENROUTER_API_KEY` (example)                     | Hermes `.env` variables; names must be shell-variable identifiers and values must be single-line |
 | `hermes_home`         | `.hermes`                                          | Single-profile mode: agent profile directory (relative to ~). Ignored if `profiles` is non-empty |
@@ -109,7 +110,7 @@ hermes gateway setup  # Configure messaging platforms
 
 The add-on is accessible via the **Home Assistant Sidebar** (landing page with embedded terminal, mode switching, and status display) and, optionally, via direct URLs. Replace `homeassistant.local` with your Home Assistant hostname or IP.
 
-Direct HTTP/HTTPS access requires `enable_dashboard` (**Enable Web Dashboard**), `enable_terminal` (**Enable Web Terminal**), and/or `enable_api` (**Enable API Server**) in the add-on configuration. Set an **Access Password** to secure these ports (username: `hermes`). The separate Hermes Desktop backend requires `enable_desktop_backend`, an access password, and an explicit host-port mapping for container port 9119 under **Network**.
+Direct HTTP/HTTPS access requires `enable_dashboard` (**Enable Web Dashboard**), `enable_terminal` (**Enable Web Terminal**), and/or `enable_api` (**Enable API Server**) in the add-on configuration. Set an **Access Password** to secure these ports (username: `hermes`). The separate Hermes Desktop backend requires `enable_desktop_backend`, an access password, and an explicit host-port mapping for container port 9119 under **Network**. The Hermes Webapp likewise requires `enable_webapp`, the same access password, and a mapping for container port 9120.
 
 ### Web Terminal & Dashboard
 
@@ -134,6 +135,22 @@ This opt-in endpoint provides powerful, full agent control. The add-on does not 
 
 The Desktop backend derives and pins Hermes' machine root from the primary `HERMES_HOME` before Hermes loads its configuration. Standard Hermes profiles below that machine root remain available through Hermes Desktop; legacy flat profiles outside that root are not promised through this endpoint.
 
+### Hermes Webapp (Desktop workspace in a browser)
+
+Clients that cannot run the native Desktop app (Intel Macs, phones, tablets) can use the same Desktop workspace in a browser:
+
+1. Set a strong `access_password`.
+2. Enable `enable_webapp`.
+3. Under the add-on's **Network** settings, map container port `9120` to the host port you want to use (normally `9120`).
+4. Start the add-on (Home Assistant restarts it when the configuration changes). The add-on writes the listener settings before the first gateway starts, so no additional restart is needed.
+5. Open `http://homeassistant.local:9120` and sign in with username `hermes` and the configured access password.
+
+The gateway of the primary profile serves the Webapp; no extra process runs. On first start the bundle is built in the background — roughly 7 minutes and 900 MB of build dependencies on a Raspberry Pi 4, measured with that node heap and thread cap and without other load on the system. The build is capped to `--max-old-space-size=2048` and two build threads (an explicit value you already set is kept), because Hermes' source build applies no limits of its own and has no build timeout; its native bundler (rolldown) parallelizes through rayon, which reads `RAYON_NUM_THREADS`. The port answers only once the build finished; progress is in the primary profile's `logs/webapp-build.log` (normally `/config/.hermes/logs/webapp-build.log`). Later starts only verify the build receipt and rebuild only when it is invalidated.
+
+If the background build fails — no network, no disk space — nothing retries until the next add-on start: the port stays unavailable and the log above holds the error. A failed rebuild of an existing bundle also marks it stale, so the listener refuses the outdated UI instead of serving it until the next successful build. Check the log before reporting the feature as broken.
+
+The Webapp is the documented Desktop workspace, so it carries the same powerful, full agent control as the Desktop backend. Enable it only when you accept that risk, and expose it only on a trusted LAN, VPN, or Tailscale path. Do not publish port 9120 directly to the internet. Use HTTPS (for example through a reverse proxy or Tailscale) where you need microphone, clipboard, or notification features, because browsers require a secure context for them. Only the primary profile gets the Webapp; additional profiles keep their own gateway without it. The add-on owns `webapp.enabled`, `webapp.host` and `webapp.port` in the primary profile's `config.yaml`: it writes them from the option on every start while the option is on, and clears `webapp.enabled` when the option is switched off; other keys in the `webapp` block are left untouched. The Basic-auth signing secret is not a config value — it lives in the primary profile's home as `.ha-webapp-auth` (mode 0600) and is replaced whenever `access_password` changes, so a password change ends existing browser sessions.
+
 ### OpenAI-compatible API
 
 Connect [Open WebUI](https://github.com/open-webui/open-webui), [SillyTavern](https://github.com/SillyTavern/SillyTavern), etc.
@@ -153,13 +170,14 @@ OpenAI-compatible API access requires `enable_api` (**Enable API Server**) in th
 
 ### Ports
 
-All direct ports are configurable in the Home Assistant add-on network settings. Use the HTTPS port (8443) with an access password for secure browser access. The HTTP port (8080) is intended for TLS-terminating reverse proxies and disabled by default. Port 9119 is the opt-in Hermes Desktop backend and is also unmapped by default.
+All direct ports are configurable in the Home Assistant add-on network settings. Use the HTTPS port (8443) with an access password for secure browser access. The HTTP port (8080) is intended for TLS-terminating reverse proxies and disabled by default. Ports 9119 (Desktop backend) and 9120 (Webapp) are opt-in and unmapped by default.
 
 | Port     | Description                                          |
 | -------- | ---------------------------------------------------- |
 | **8080** | HTTP access (all URLs above, replace 8443 with 8080) |
 | **8443** | HTTPS access (TLS with self-signed cert)             |
 | **9119** | Hermes Desktop remote backend (plain HTTP; trusted LAN/VPN/Tailscale only) |
+| **9120** | Hermes Webapp (plain HTTP; trusted LAN/VPN/Tailscale only) |
 
 ### SSH
 
@@ -213,6 +231,8 @@ Authentication layers differ by access path:
 - **Gateway configuration authority**: the gateway launcher preserves Hermes' normal profile, external-secret, and managed-environment reloads, then reasserts the add-on-owned profile home, disabled multiplex setting, foreground-supervision controls, and `API_SERVER_HOST`, `API_SERVER_PORT`, `API_SERVER_ENABLED`, and `API_SERVER_KEY` values after every load. At the final gateway-config boundary it again disables Hermes profile multiplexing and either removes the API platform or enables it with the add-on-owned host, port, and key. Each add-on-managed gateway slot also masks a sticky interactive `active_profile` selection independently of the installed Hermes revision; runtimes with native supervised-child support receive that signal as defense in depth. The add-on supervises each gateway through a per-slot subreaper/process-group leader and a separate environment-empty, fail-fast logger child. The long-lived slot supervisor clean-reexecs with only non-secret locale/path state and passes the complete original gateway environment to the child through an anonymous unlinked file descriptor. The supervisor and logger bind themselves to the original `run.sh` parent; TERM/INT remain blocked across the clean reexec until the post-reexec handlers and parent check are active, and `run.sh` does not treat slot startup as complete until that ready handshake succeeds. A durable log-file open or write error terminates that logger and triggers a controlled restart. The slot supervisor adopts session-detached background subprocesses, applies bounded TERM/KILL cleanup, and reaps them before reporting clean containment. It logs the gateway's actual exit status, returns success only after the owned descendant set is empty, and makes an unsafe or unproven supervisor exit container-fatal instead of starting an overlapping replacement, so PID ownership, descendants, log draining, restart, and shutdown remain explicitly owned by the add-on.
 - **Hermes Desktop backend** (`:9119` when enabled and mapped): Hermes Basic-auth login using username `hermes` and `access_password`. This endpoint exposes the full Desktop backend contract, including chat, WebSockets, PTY, events, profiles, and agent control. It is disabled and unmapped by default. Enabling it is an explicit risk decision; keep it on a trusted LAN/VPN/Tailscale path and do not expose it directly to the internet.
 
+- **Hermes Webapp** (`:9120` when enabled and mapped): the same Basic-auth sign-in against the dashboard gate, username `hermes` and `access_password`. An exact scrypt hash of the password is handed to the primary gateway through its environment — neither the plaintext nor a hash is written to `config.yaml`; only a stable signing secret is stored there so browser sessions survive gateway restarts. Disabled and unmapped by default; treat it like the Desktop backend.
+
 If you expose direct ports to the internet, place a network-perimeter gate (firewall, VPN, reverse proxy with stronger auth) in front — Basic Auth alone is not brute-force resistant.
 
 ## Architecture
@@ -224,6 +244,7 @@ Five service families in a Debian Bookworm container:
 3. **ttyd** (×2 per profile) -- web terminals backed by persistent tmux sessions (`hermes-<name>` + `terminal-<name>`)
 4. **nginx** -- HTTP, HTTPS, and Home Assistant ingress proxy routing to dashboard + terminal + API. Multi-profile setups serve `/profile/<name>/...` for non-primary profiles.
 5. **Hermes Desktop backend** (`hermes serve`, optional) -- official root-level HTTP/WebSocket backend on container port 9119, using the primary Hermes machine root and Basic-auth login.
+6. **Hermes Webapp listener** (optional) -- the primary gateway additionally serves the browser-hosted Desktop workspace on container port 9120 whenever `webapp.enabled` is set; the add-on writes that setting from the `enable_webapp` option.
 
 ### Shell Environment
 

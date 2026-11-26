@@ -32,6 +32,7 @@ ENABLE_DASHBOARD=$(opt_bool enable_dashboard)
 ENABLE_TERMINAL=$(opt_bool enable_terminal)
 ENABLE_API=$(opt_bool enable_api)
 ENABLE_DESKTOP_BACKEND=$(opt_bool enable_desktop_backend)
+ENABLE_WEBAPP=$(opt_bool enable_webapp)
 
 # Validate and normalize the API credential before nginx, installation, or any
 # Hermes service can start. The disabled API preserves existing password behavior.
@@ -189,6 +190,22 @@ fi
 # shellcheck source=desktop-backend.sh
 source "$DESKTOP_BACKEND_LIB"
 desktop_backend_validate_options || exit 1
+WEBAPP_LIB=""
+for _candidate in \
+    "/usr/local/lib/hermes-webapp.sh" \
+    "$(dirname "${BASH_SOURCE[0]}")/webapp.sh"; do
+    if [ -f "$_candidate" ]; then
+        WEBAPP_LIB="$_candidate"
+        break
+    fi
+done
+if [ -z "$WEBAPP_LIB" ]; then
+    echo "[run] FATAL: webapp.sh not found"
+    exit 1
+fi
+# shellcheck source=webapp.sh
+source "$WEBAPP_LIB"
+webapp_validate_options || exit 1
 
 # Start nginx early with loading page (replaced with full config after setup)
 cat > /etc/nginx/nginx.conf << LOADCONF
@@ -691,6 +708,7 @@ HERMES_VERSION="$("$VENV_DIR/bin/hermes" --version 2>/dev/null | head -1 || echo
 export HERMES_VERSION
 echo "[run] Hermes version: $HERMES_VERSION"
 desktop_backend_validate_runtime || exit 1
+webapp_validate_runtime || exit 1
 
 # ── Section 6: Initial config scaffolding (per profile) ──────────────
 scaffold_profile_files() {
@@ -982,6 +1000,16 @@ start_gateway_for_profile() {
             export HERMES_ADDON_API_KEY="$ACCESS_PASSWORD"
         else
             export HERMES_ADDON_API_KEY=""
+        fi
+        # Only the primary gateway serves the Webapp listener, so only it
+        # receives the sign-in credential. The add-on option stays
+        # authoritative: an exact scrypt hash of the configured password
+        # travels in the environment, so neither config.yaml nor the gateway
+        # ever holds the plaintext, like the Desktop backend.
+        if [ "$i" = "0" ] && [ "$ENABLE_WEBAPP" = "true" ]; then
+            export HERMES_DASHBOARD_BASIC_AUTH_USERNAME="hermes"
+            export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH="$WEBAPP_PASSWORD_HASH"
+            export HERMES_DASHBOARD_BASIC_AUTH_SECRET="$WEBAPP_AUTH_SECRET"
         fi
         exec "$GATEWAY_CHILD" \
             "$VENV_DIR/bin/python" \
@@ -1295,6 +1323,10 @@ shutdown() {
     nginx -s quit 2>/dev/null || true
     echo "[run] nginx stopped"
     desktop_backend_stop
+    if [ -n "${WEBAPP_BUILD_PID:-}" ] && kill -0 "$WEBAPP_BUILD_PID" 2>/dev/null; then
+        kill -TERM "$WEBAPP_BUILD_PID" 2>/dev/null || true
+        echo "[run] Webapp bundle build stopped"
+    fi
     for i in "${!PROFILE_DIRS[@]}"; do
         for pid in "${TTYD_TERMINAL_PIDS[$i]:-}" "${TTYD_HERMES_PIDS[$i]:-}" "${DASHBOARD_PIDS[$i]:-}"; do
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -1332,6 +1364,33 @@ trap shutdown SIGTERM SIGINT
 # the first gateway so a partial topology can never be launched.
 configure_profile_topology "$VENV_DIR/bin/python" "$VENV_DIR/bin/hermes"
 
+# The Webapp listener belongs to the primary gateway and reads host/port once,
+# at startup. Write both before the first gateway so no restart is needed.
+webapp_configure "${PROFILE_HOMES[0]}" || exit 1
+webapp_warn_if_basic_auth_disabled "${PROFILE_HOMES[0]}"
+WEBAPP_PASSWORD_HASH=""
+WEBAPP_AUTH_SECRET=""
+if [ "$ENABLE_WEBAPP" = "true" ]; then
+    WEBAPP_PASSWORD_HASH=$(webapp_password_hash "${PROFILE_HOMES[0]}") || exit 1
+    case "$WEBAPP_PASSWORD_HASH" in
+        scrypt\$*) ;;
+        *)
+            echo "[run] FATAL: could not hash access_password for the Webapp sign-in" >&2
+            exit 1
+            ;;
+    esac
+    WEBAPP_AUTH_SECRET=$(webapp_auth_secret "${PROFILE_HOMES[0]}") || exit 1
+fi
+# Only the primary gateway serves the Webapp. A profile that was primary before
+# a reorder would otherwise keep its own listener enabled and collide on the
+# published port.
+if [ "${#PROFILE_DIRS[@]}" -gt 1 ]; then
+    for i in "${!PROFILE_DIRS[@]}"; do
+        [ "$i" = "0" ] && continue
+        ( ENABLE_WEBAPP=false; webapp_configure "${PROFILE_HOMES[$i]}" )
+    done
+fi
+
 install_start_hermes_wrapper
 
 for i in "${!PROFILE_DIRS[@]}"; do
@@ -1359,6 +1418,8 @@ render_nginx_config
 
 reload_nginx
 
+webapp_start_build "${PROFILE_HOMES[0]}"
+
 echo "[run] All services started"
 BASE_URL="${HASS_URL:-http://localhost}"
 BASE_SCHEME="${BASE_URL%%://*}"
@@ -1382,6 +1443,7 @@ for i in "${!PROFILE_DIRS[@]}"; do
     echo "   API:       ${BASE_URL}${prefix}/v1/"
 done
 [ "$ENABLE_DESKTOP_BACKEND" = "true" ] && echo " Desktop:    container port ${DESKTOP_BACKEND_PORT} (use the Home Assistant Network host port)"
+[ "$ENABLE_WEBAPP" = "true" ] && echo " Webapp:     container port ${WEBAPP_PORT} (map it under Network; builds in the background)"
 echo "─────────────────────────────────────────────"
 
 # ── Section 12: Supervisor loop ──────────────────────────────────────

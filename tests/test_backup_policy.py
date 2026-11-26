@@ -31,6 +31,7 @@ EXPECTED_BACKUP_EXCLUDE = [
     "lsp/pses",
     ".cache",
     ".npm",
+    ".hermes/hermes-agent/.build",
 ]
 
 
@@ -89,6 +90,9 @@ class BackupManifestTests(unittest.TestCase):
             "legacy-flat profile LSP": (
                 "/config/amy/lsp/node_modules/typescript/lib/tsserver.js"
             ),
+            "webapp build workspace": (
+                "/config/.hermes/hermes-agent/.build/webapp-workspace/node_modules/.pnpm/lock.yaml"
+            ),
             "cache": "/config/.cache/uv/archive-v0/package",
             "npm cache": "/config/.npm/_cacache/content-v2/package",
         }
@@ -105,6 +109,7 @@ class BackupManifestTests(unittest.TestCase):
             "source": "/config/.hermes/hermes-agent/hermes_cli/main.py",
             "Hermes LSP source": "/config/.hermes/hermes-agent/agent/lsp/manager.py",
             "source git": "/config/.hermes/hermes-agent/.git/objects/aa/object",
+            "built webapp bundle": "/config/.hermes/hermes-agent/apps/desktop/dist-webapp/index.html",
             "profile config": "/config/.hermes/config.yaml",
             "profile environment": "/config/.hermes/.env",
             "profile auth": "/config/.hermes/auth.json",

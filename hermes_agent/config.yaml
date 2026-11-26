@@ -24,6 +24,7 @@ backup_exclude:
   - lsp/pses
   - .cache
   - .npm
+  - .hermes/hermes-agent/.build
 map:
   - addon_config:rw
   - media:rw
@@ -32,10 +33,12 @@ ports:
   8080/tcp: null
   8443/tcp: 8443
   9119/tcp: null
+  9120/tcp: null
 ports_description:
   8080/tcp: "HTTP: /hermes/ (agent) · /dashboard/ (web UI) · /terminal/ (shell) · /v1/ (OpenAI API)"
   8443/tcp: "HTTPS: /hermes/ (agent) · /dashboard/ (web UI) · /terminal/ (shell) · /v1/ (OpenAI API) — TLS (self-signed cert)"
   9119/tcp: "Hermes Desktop remote backend — opt-in; trusted LAN/VPN/Tailscale only"
+  9120/tcp: "Hermes Webapp (Desktop workspace in the browser) — opt-in; trusted LAN/VPN/Tailscale only"
 options:
   git_url: "https://github.com/NousResearch/hermes-agent.git"
   git_ref: ""
@@ -51,6 +54,7 @@ options:
   enable_terminal: false
   enable_api: false
   enable_desktop_backend: false
+  enable_webapp: false
   access_password: ""
   env_vars:
     - name: "OPENROUTER_API_KEY"
@@ -74,6 +78,7 @@ schema:
   enable_terminal: "bool"
   enable_api: "bool"
   enable_desktop_backend: "bool"
+  enable_webapp: "bool"
   access_password: "password?"
   env_vars:
     - name: "match(^[A-Z_][A-Z0-9_]{0,254}$)"

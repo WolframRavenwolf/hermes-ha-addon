@@ -51,6 +51,15 @@ configuration:
       ⚠️ Opt in to the powerful Hermes Desktop remote backend on container port 9119.
       Requires an access password. Map the port under Network and expose it only on a trusted LAN/VPN/Tailscale path.
       Authenticated Desktop users receive full agent control and accept that risk.
+  enable_webapp:
+    name: Enable Hermes Webapp
+    description: >-
+      ⚠️ Opt in to the Hermes Webapp (the Desktop workspace in a browser) on container port 9120.
+      Requires an access password. Map the port under Network and expose it only on a trusted
+      LAN/VPN/Tailscale path; use HTTPS, because microphone, clipboard and notifications need a
+      secure context. The bundle is built in the background on first start
+      (~7 minutes and ~900 MB of build dependencies on a Raspberry Pi 4, capped to a 2 GB node heap
+      and two threads; no retry until the next start if the build fails).
   access_password:
     name: Access Password
     description: >-
