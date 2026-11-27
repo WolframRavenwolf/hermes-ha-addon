@@ -16,6 +16,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "hermes_agent/source-channel.py"
 SPEC = importlib.util.spec_from_file_location("addon_source_channel", SOURCE)
+DASHBOARD_PATCHER = ROOT / "hermes_agent/dashboard-patches.py"
 
 
 def git(root, *args):
@@ -490,6 +491,144 @@ class SourceChannelTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertNotIn("update held", error)
         self.assertEqual(self.checkout_state(), before)
+
+    def addon_patched_checkout(self):
+        """Checkout dirty only from the real add-on patcher; upstream then changes api.ts."""
+        from types import SimpleNamespace
+        (self.work / "web/src/lib").mkdir(parents=True)
+        (self.work / "web/src/lib/api.ts").write_text(
+            "function readBasePath(): string {\n"
+            "  return window.__HERMES_BASE_PATH__ ?? \"\";\n"
+            "}\n"
+            "export const HERMES_BASE_PATH = readBasePath();\n")
+        (self.work / "web/vite.config.ts").write_text(
+            "export default defineConfig({\n  plugins: [],\n});\n")
+        git(self.work, "add", "web")
+        git(self.work, "commit", "-m", "dashboard")
+        base = git(self.work, "rev-parse", "HEAD")
+        with (self.work / "web/src/lib/api.ts").open("a") as api:
+            api.write("export const UPSTREAM_CHANGE = true;\n")
+        git(self.work, "commit", "-am", "upstream changes a patched file")
+        target = git(self.work, "rev-parse", "HEAD")
+        git(self.work, "push", "origin", "main")
+        git(self.source, "fetch", "origin", "main")
+        git(self.source, "checkout", "--detach", base)
+        self.assertEqual(Path(git(self.source, "rev-parse", "--show-toplevel")).resolve(),
+                         self.source.resolve())
+        status = self.base / "patch-status"
+        subprocess.run([sys.executable, "-B", str(DASHBOARD_PATCHER), str(self.source), str(status)],
+                       check=True, capture_output=True, timeout=30)
+        self.assertEqual(status.read_text(), "changed")
+        self.assertEqual(git(self.source, "diff", "--name-only"), "web/src/lib/api.ts\nweb/vite.config.ts")
+        return SimpleNamespace(commit=target, branch=None, ahead=False)
+
+    def test_addon_dashboard_patches_alone_do_not_hold_update(self):
+        target = self.addon_patched_checkout()
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, output = self.invoke()
+        self.assertEqual(code, 0, error)
+        self.assertNotIn("update held", error)
+        self.assertIn("Restored add-on dashboard patches", error)
+        self.assertEqual(git(self.source, "rev-parse", "HEAD"), target.commit)
+        self.assertEqual(git(self.source, "status", "--porcelain", "--untracked-files=all"), "")
+        self.assertEqual(git(self.source, "stash", "list"), "")
+
+    def test_up_to_date_main_keeps_dashboard_patches_in_place(self):
+        from types import SimpleNamespace
+        target = self.addon_patched_checkout()
+        git(self.source, "checkout", "--", "web")
+        git(self.source, "checkout", "--detach", target.commit)
+        subprocess.run([sys.executable, "-B", str(DASHBOARD_PATCHER), str(self.source),
+                        str(self.base / "patch-status-current")],
+                       check=True, capture_output=True, timeout=30)
+        before = self.checkout_state()
+        main = SimpleNamespace(commit=None, branch="main", ahead=False)
+        with patch.object(self.module, "native_target", return_value=main):
+            code, error, output = self.invoke()
+        # Nothing to update: keep the patches, so startup does not rebuild the dashboard.
+        self.assertEqual(code, 0, error)
+        self.assertNotIn("Restored add-on dashboard patches", error)
+        self.assertNotIn("update held", error)
+        self.assertEqual(self.checkout_state(), before)
+
+    def test_up_to_date_main_with_unmerged_index_remains_fatal(self):
+        from types import SimpleNamespace
+        git(self.source, "fetch", "origin", "main")
+        git(self.source, "checkout", "--detach", "FETCH_HEAD")
+        blob = git(self.source, "hash-object", "-w", "file.txt")
+        subprocess.run(["git", "update-index", "--index-info"], cwd=self.source, check=True,
+                       input="".join(f"100644 {blob} {stage}\tfile.txt\n" for stage in (1, 2, 3)),
+                       text=True, capture_output=True)
+        self.assertNotEqual(git(self.source, "ls-files", "--unmerged"), "")
+        before = self.checkout_state()
+        main = SimpleNamespace(commit=None, branch="main", ahead=False)
+        with patch.object(self.module, "native_target", return_value=main):
+            code, error, _ = self.invoke()
+        self.assertEqual(code, 1)
+        self.assertIn("unresolved Git conflicts", error)
+        self.assertEqual(self.checkout_state(), before)
+
+    def test_diverged_main_with_dashboard_patches_still_holds(self):
+        from types import SimpleNamespace
+        self.addon_patched_checkout()
+        git(self.source, "config", "user.email", "test@example.invalid")
+        git(self.source, "config", "user.name", "Test")
+        (self.source / "file.txt").write_text("local commit\n")
+        git(self.source, "add", "file.txt")
+        git(self.source, "commit", "-m", "local commit")
+        before = self.checkout_state()
+        main = SimpleNamespace(commit=None, branch="main", ahead=False)
+        with patch.object(self.module, "native_target", return_value=main):
+            code, error, output = self.invoke()
+        # No fast-forward is possible, so the patches must not be removed first.
+        self.assert_held_checkout(before, code, error, output)
+        self.assertNotIn("Restored add-on dashboard patches", error)
+
+    def test_user_edit_in_patched_dashboard_file_holds_update(self):
+        target = self.addon_patched_checkout()
+        with (self.source / "web/vite.config.ts").open("a") as vite:
+            vite.write("// my local tweak\n")
+        before = self.checkout_state()
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, output = self.invoke()
+        self.assert_held_checkout(before, code, error, output)
+
+    def test_dashboard_patches_with_other_local_changes_hold_update(self):
+        target = self.addon_patched_checkout()
+        for extra in ("untracked.txt", "file.txt"):
+            with self.subTest(extra=extra):
+                (self.source / extra).write_text("user change\n")
+                before = self.checkout_state()
+                with patch.object(self.module, "native_target", return_value=target):
+                    code, error, output = self.invoke()
+                self.assert_held_checkout(before, code, error, output)
+                (self.source / extra).unlink()
+
+    def test_staged_dashboard_patch_holds_update(self):
+        target = self.addon_patched_checkout()
+        git(self.source, "add", "web/vite.config.ts")
+        before = self.checkout_state()
+        with patch.object(self.module, "native_target", return_value=target):
+            code, error, output = self.invoke()
+        self.assert_held_checkout(before, code, error, output)
+
+    def test_unverifiable_dashboard_patches_hold_update(self):
+        target = self.addon_patched_checkout()
+        failing = self.base / "failing-patcher.py"
+        failing.write_text("raise SystemExit(3)\n")
+        roots = self.base / "patched-roots"
+        recorder = self.base / "recording-patcher.py"
+        recorder.write_text(f"import sys\nopen({str(roots)!r}, 'a').write(sys.argv[1] + '\\n')\n")
+        for patchers in ((self.base / "missing-patcher.py",), (failing,), (recorder,)):
+            with self.subTest(patchers=patchers):
+                before = self.checkout_state()
+                with patch.object(self.module, "native_target", return_value=target), \
+                     patch.object(self.module, "DASHBOARD_PATCHERS", patchers):
+                    code, error, output = self.invoke()
+                self.assert_held_checkout(before, code, error, output)
+        # A successful no-op patcher is not proof, and it never sees the real checkout.
+        patched_root = Path(roots.read_text().strip()).resolve()
+        self.assertNotIn(self.source.resolve(), (patched_root, *patched_root.parents))
 
     def test_published_release_rejects_prerelease_metadata(self):
         import io

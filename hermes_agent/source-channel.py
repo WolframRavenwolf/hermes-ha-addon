@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -24,6 +25,11 @@ except ModuleNotFoundError as exc:
 OFFICIAL = "https://github.com/NousResearch/hermes-agent.git"
 TAG = re.compile(r"v(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+# Files run.sh's dashboard patcher may rewrite; it re-applies them after updates.
+DASHBOARD_PATCH_PATHS = ("web/src/lib/api.ts", "web/src/plugins/usePlugins.ts", "web/src/main.tsx",
+                         "web/vite.config.ts", "hermes_cli/dashboard_auth/prefix.py")
+DASHBOARD_PATCHERS = (Path("/usr/local/bin/hermes-dashboard-patches"),
+                      Path(__file__).with_name("dashboard-patches.py"))
 
 
 def git(source, *args):
@@ -131,12 +137,51 @@ def hold_update(source, exc):
           file=sys.stderr)
 
 
-def hold_local_changes(source):
-    # Generated patches and user edits share this checkout; neither is disposable.
+def restore_dashboard_patches(source):
+    """Restore only worktree edits byte-identical to the add-on patcher's output."""
+    try:
+        status = subprocess.run(["git", "status", "--porcelain", "-z", "--untracked-files=normal"],
+                                cwd=source, capture_output=True, check=True, timeout=90).stdout
+        entries = [entry.decode() for entry in status.split(b"\0") if entry]
+        dirty = [entry[3:] for entry in entries if entry[:3] == " M "]
+        if not dirty or len(dirty) != len(entries) or not set(dirty) <= set(DASHBOARD_PATCH_PATHS):
+            return False
+        patcher = next((path for path in DASHBOARD_PATCHERS if path.is_file()), None)
+        if patcher is None:
+            return False
+        with tempfile.TemporaryDirectory() as temp:
+            # Patch pristine HEAD copies; the patcher never runs on the checkout here.
+            copy = Path(temp) / "source"
+            for path in DASHBOARD_PATCH_PATHS:
+                blob = subprocess.run(["git", "cat-file", "blob", f"HEAD:{path}"], cwd=source,
+                                      capture_output=True, timeout=90)
+                if blob.returncode == 0:
+                    (copy / path).parent.mkdir(parents=True, exist_ok=True)
+                    (copy / path).write_bytes(blob.stdout)
+            subprocess.run([sys.executable, "-B", str(patcher), str(copy), str(Path(temp) / "status")],
+                           capture_output=True, check=True, timeout=60)
+            if any((copy / path).read_bytes() != (source / path).read_bytes() for path in dirty):
+                return False
+        git(source, "checkout", "--", *dirty)  # Index equals HEAD for these paths.
+        return not git(source, "status", "--porcelain", "--untracked-files=normal")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+
+
+def reject_unmerged(source):
     # Do not turn an already conflicted index into a successful startup decision.
     if git(source, "ls-files", "--unmerged"):
         raise ValueError("Source checkout has unresolved Git conflicts; resolve them before updating")
+
+
+def hold_local_changes(source, restore=True):
+    # Generated patches and user edits share this checkout; neither is disposable.
+    reject_unmerged(source)
     if not git(source, "status", "--porcelain", "--untracked-files=normal"):
+        return False
+    if restore and restore_dashboard_patches(source):
+        print("[run] Restored add-on dashboard patches before the source update; "
+              "they are re-applied after it", file=sys.stderr)
         return False
     hold_update(source, ValueError(
         f"local source changes in {source}; inspect git status there and reconcile "
@@ -210,7 +255,16 @@ def update(source, homes):
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
             hold_update(source, exc)
             return
-        if hold_local_changes(source):
+        # Already current: leave generated patches in place (no needless rebuild).
+        reject_unmerged(source)
+        if subprocess.run(["git", "merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"],
+                          cwd=source, check=False, capture_output=True, timeout=90).returncode == 0:
+            return
+        # Remove patches only when the fast-forward below can succeed.
+        fast_forward = subprocess.run(["git", "merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"],
+                                      cwd=source, check=False, capture_output=True,
+                                      timeout=90).returncode == 0
+        if hold_local_changes(source, restore=fast_forward):
             return
         git(source, "merge", "--ff-only", "FETCH_HEAD")
     else:
