@@ -99,6 +99,7 @@ COPY nginx-render.sh /usr/local/lib/hermes-nginx-render.sh
 COPY profile-init.sh /usr/local/lib/hermes-profile-init.sh
 COPY desktop-backend.sh /usr/local/lib/hermes-desktop-backend.sh
 COPY webapp.sh /usr/local/lib/hermes-webapp.sh
+COPY webapp-auth-state.py /usr/local/bin/hermes-webapp-auth-state
 COPY desktop-backend-launcher.py /usr/local/bin/hermes-desktop-backend
 COPY nginx.conf.tpl /etc/nginx/nginx.conf.tpl
 COPY nginx-ports.conf.tpl /etc/nginx/nginx-ports.conf.tpl

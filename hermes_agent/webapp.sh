@@ -10,6 +10,7 @@
 WEBAPP_PORT="${WEBAPP_PORT:-9120}"
 WEBAPP_BUILD_LOG="${WEBAPP_BUILD_LOG:-}"
 WEBAPP_BUILD_PID="${WEBAPP_BUILD_PID:-}"
+WEBAPP_AUTH_STATE_HELPER="${WEBAPP_AUTH_STATE_HELPER:-/usr/local/bin/hermes-webapp-auth-state}"
 
 
 webapp_validate_options() {
@@ -33,50 +34,30 @@ webapp_validate_options() {
 # password (the #17 Desktop-backend approach) keeps every access path on the
 # same credential, padding included, and keeps the plaintext out of the
 # gateway's environment entirely.
-webapp_password_hash() {
+# Since Hermes v0.23.2 the session signing key is derived from the signing
+# secret *and* the credential (the password hash), so a hash that is salted
+# afresh on every start ends every session whenever the add-on restarts. The
+# state file therefore keeps the verified hash together with the secret: both
+# are reused while the configured password still verifies, and both are
+# replaced when it changes. That also retires the unsalted SHA-256 fingerprint,
+# which was a fast-to-guess digest of the password on disk.
+webapp_auth_state() {
     local home="$1"
-    # The plugin package lives in the checkout, so import from there instead of
-    # relying on the checkout happening to be on sys.path.
+    # The helper lives next to this library in the image; the plugin package comes
+    # from the checkout, so import from there instead of relying on the checkout
+    # happening to be on sys.path.
     local root="${SRC_DIR:-$home}"
+    if [ ! -d "$root/plugins/dashboard_auth" ]; then
+        echo "[webapp] FATAL: no Hermes checkout with plugins/dashboard_auth at $root" >&2
+        return 1
+    fi
     (
         cd "$root" || exit 1
         export HERMES_HOME="$home"
         export PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}"
-        printf '%s' "${ACCESS_PASSWORD:-}" | "${VENV_DIR:-}/bin/python" -c '
-import sys
-from plugins.dashboard_auth.basic import hash_password
-sys.stdout.write(hash_password(sys.stdin.read()))
-'
+        printf '%s' "${ACCESS_PASSWORD:-}" \
+            | "${VENV_DIR:-}/bin/python" "$WEBAPP_AUTH_STATE_HELPER" "$home"
     )
-}
-
-
-# Signing secret for the Basic-auth sessions. It is itself a credential —
-# whoever reads it can mint sessions — so it lives in its own 0600 file instead
-# of config.yaml, and it is rotated whenever access_password changes so a
-# password change also ends existing sessions (as the Desktop backend does).
-webapp_auth_secret() {
-    local home="$1"
-    local file="$home/.ha-webapp-auth"
-    local fingerprint stored="" secret=""
-    fingerprint=$(printf '%s' "${ACCESS_PASSWORD:-}" | sha256sum | cut -d' ' -f1)
-    if [ -f "$file" ]; then
-        stored=$(sed -n 's/^fingerprint=//p' "$file" 2>/dev/null)
-        secret=$(sed -n 's/^secret=//p' "$file" 2>/dev/null)
-        if [ -n "$secret" ] && [ "$stored" = "$fingerprint" ]; then
-            chmod 600 "$file" 2>/dev/null || true
-            printf '%s' "$secret"
-            return 0
-        fi
-    fi
-    secret=$(openssl rand -base64 32) || return 1
-    if ! (umask 077; printf 'fingerprint=%s\nsecret=%s\n' "$fingerprint" "$secret" > "$file.new"); then
-        rm -f "$file.new" 2>/dev/null || true
-        return 1
-    fi
-    mv -f "$file.new" "$file" || return 1
-    echo "[webapp] Created a Basic-auth signing secret in $file (0600)" >&2
-    printf '%s' "$secret"
 }
 
 
@@ -134,6 +115,12 @@ webapp_cli() {
 webapp_configure() {
     local home="$1"
     local hermes="${VENV_DIR:-}/bin/hermes"
+    if [ "${ENABLE_WEBAPP:-false}" != "true" ] \
+        && ! grep -qs '^[[:space:]]*webapp:' "$home/config.yaml" 2>/dev/null; then
+        # Nothing to clear and nothing to write: skip the Hermes CLI start,
+        # which costs seconds per profile on every boot of every user.
+        return 0
+    fi
     if [ ! -x "$hermes" ]; then
         echo "[webapp] FATAL: Hermes CLI is unavailable" >&2
         return 1
@@ -210,6 +197,10 @@ webapp_start_build() {
         # The build runs npm/pnpm lifecycle scripts from a shared checkout; the
         # add-on's own credentials have no business in that environment.
         unset ACCESS_PASSWORD WEBAPP_PASSWORD_HASH WEBAPP_AUTH_SECRET HERMES_ADDON_API_KEY
+        # The Supervisor tokens grant Home Assistant admin access; npm/pnpm
+        # lifecycle scripts from a dependency tree we do not control have no
+        # business with them. Keys from the profile's own .env are still inherited
+        # by the build (the CLI loads that file itself) — see the README.
         # Guard the unthrottled source build: build_source_webapp() does not
         # apply the dashboard's build limits (no heap cap, no thread cap, no
         # build timeout). A cap the operator already set stays: appending a
@@ -227,15 +218,18 @@ webapp_start_build() {
         [ -n "$pin" ] && cmd+=(-p "$pin")
         cmd+=(webapp --build-only)
         status=0
-        nice -n 10 timeout -k 30 "$timeout_seconds" "${cmd[@]}" || status=$?
+        env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN \
+            nice -n 10 timeout -k 30 "$timeout_seconds" "${cmd[@]}" || status=$?
         if [ "$status" -ne 0 ]; then
             # Mirror `hermes update`: a failed or killed rebuild marks the
             # bundle stale, so the listener refuses a possibly half-written or
             # outdated UI instead of serving it until the next successful build.
-            "${VENV_DIR:-}/bin/python" -c \
+            if ! "${VENV_DIR:-}/bin/python" -c \
                 'from hermes_cli.config import get_project_root
 from hermes_cli.webapp import mark_webapp_stale
-mark_webapp_stale(get_project_root())' || true
+mark_webapp_stale(get_project_root())'; then
+                echo "[webapp] WARNING: could not mark the bundle stale; the listener may serve an unfinished build" >&2
+            fi
         fi
         exit "$status"
     ) >>"$log" 2>&1 &

@@ -25,6 +25,7 @@ backup_exclude:
   - .cache
   - .npm
   - .hermes/hermes-agent/.build
+  - .hermes/cache/pnpm
 map:
   - addon_config:rw
   - media:rw

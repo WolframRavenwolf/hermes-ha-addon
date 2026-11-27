@@ -1371,7 +1371,11 @@ webapp_warn_if_basic_auth_disabled "${PROFILE_HOMES[0]}"
 WEBAPP_PASSWORD_HASH=""
 WEBAPP_AUTH_SECRET=""
 if [ "$ENABLE_WEBAPP" = "true" ]; then
-    WEBAPP_PASSWORD_HASH=$(webapp_password_hash "${PROFILE_HOMES[0]}") || exit 1
+    WEBAPP_AUTH_STATE=$(webapp_auth_state "${PROFILE_HOMES[0]}") || {
+        echo "[run] FATAL: could not prepare the Webapp sign-in state" >&2
+        exit 1
+    }
+    { IFS= read -r WEBAPP_PASSWORD_HASH; IFS= read -r WEBAPP_AUTH_SECRET; } <<< "$WEBAPP_AUTH_STATE"
     case "$WEBAPP_PASSWORD_HASH" in
         scrypt\$*) ;;
         *)
@@ -1379,7 +1383,10 @@ if [ "$ENABLE_WEBAPP" = "true" ]; then
             exit 1
             ;;
     esac
-    WEBAPP_AUTH_SECRET=$(webapp_auth_secret "${PROFILE_HOMES[0]}") || exit 1
+    if [ -z "$WEBAPP_AUTH_SECRET" ]; then
+        echo "[run] FATAL: could not create the Webapp signing secret" >&2
+        exit 1
+    fi
 fi
 # Only the primary gateway serves the Webapp. A profile that was primary before
 # a reorder would otherwise keep its own listener enabled and collide on the

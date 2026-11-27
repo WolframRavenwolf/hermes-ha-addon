@@ -101,6 +101,16 @@ class ManifestTests(unittest.TestCase):
             DOCKERFILE.read_text(),
         )
 
+    def test_container_ships_the_sign_in_state_helper(self) -> None:
+        # Without this line the entrypoint would call a missing script and the
+        # Webapp would never get a sign-in state.
+        dockerfile = DOCKERFILE.read_text()
+        self.assertIn(
+            "COPY webapp-auth-state.py /usr/local/bin/hermes-webapp-auth-state",
+            dockerfile,
+        )
+        self.assertTrue((ADDON / "webapp-auth-state.py").is_file())
+
     def test_user_facing_text_states_opt_in_risk_and_trusted_network_boundary(self) -> None:
         for text in (TRANSLATIONS.read_text(), README.read_text()):
             self.assertIn("enable_webapp", text)
@@ -128,6 +138,9 @@ class WebappLibraryTestCase(unittest.TestCase):
         python.chmod(0o755)
         self.home = self.root / "config"
         (self.home / "logs").mkdir(parents=True)
+        # The sign-in helper refuses to guess: it needs a checkout with the plugin.
+        self.checkout = self.root / "checkout"
+        (self.checkout / "plugins" / "dashboard_auth").mkdir(parents=True)
         self.record = self.root / "record.txt"
         self.record.touch()
 
@@ -136,6 +149,7 @@ class WebappLibraryTestCase(unittest.TestCase):
         merged.update(
             {
                 "VENV_DIR": str(self.venv),
+                "SRC_DIR": str(self.checkout),
                 "RECORD": str(self.record),
                 "BASE_PATH": "/usr/bin:/bin",
                 "ACCESS_PASSWORD": "",
@@ -222,42 +236,47 @@ class ConfigureTests(WebappLibraryTestCase):
         # The signing secret is a credential: it must not land in config.yaml.
         self.assertNotIn("dashboard.basic_auth", "\n".join(self.calls()))
 
-    def test_signing_secret_is_created_private_then_reused(self) -> None:
-        first = self.run_lib(
-            f'ENABLE_WEBAPP=true\nwebapp_auth_secret {shlex.quote(str(self.home))}\n',
-            env={"ACCESS_PASSWORD": "first-password"},
-        )
-        self.assertEqual(first.returncode, 0, first.stderr)
-        secret_file = self.home / ".ha-webapp-auth"
-        self.assertTrue(secret_file.exists())
-        self.assertEqual(secret_file.stat().st_mode & 0o777, 0o600)
-        created = first.stdout.strip()
-        self.assertGreaterEqual(len(created), 32)
-
-        second = self.run_lib(
-            f'ENABLE_WEBAPP=true\nwebapp_auth_secret {shlex.quote(str(self.home))}\n',
-            env={"ACCESS_PASSWORD": "first-password"},
-        )
-        self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertEqual(second.stdout.strip(), created)
-        self.assertNotIn("Created a Basic-auth signing secret", second.stderr)
-
-    def test_signing_secret_is_rotated_with_the_password(self) -> None:
-        first = self.run_lib(
-            f'ENABLE_WEBAPP=true\nwebapp_auth_secret {shlex.quote(str(self.home))}\n',
-            env={"ACCESS_PASSWORD": "first-password"},
-        )
-        rotated = self.run_lib(
-            f'ENABLE_WEBAPP=true\nwebapp_auth_secret {shlex.quote(str(self.home))}\n',
-            env={"ACCESS_PASSWORD": "second-password"},
+    def test_auth_state_passes_the_password_on_stdin_and_returns_both_lines(self) -> None:
+        result = self.run_lib(
+            f'ENABLE_WEBAPP=true\nwebapp_auth_state {shlex.quote(str(self.home))}\n',
+            env={
+                "ACCESS_PASSWORD": "first-password",
+                "STUB_READ_STDIN": "1",
+                "STUB_HASH": "scrypt$16384$8$1$c2FsdA==$ZGlnZXN0\nc2VjcmV0LXNlY3JldA==",
+            },
         )
 
-        self.assertEqual(rotated.returncode, 0, rotated.stderr)
-        self.assertNotEqual(rotated.stdout.strip(), first.stdout.strip())
-        # A password change ends existing sessions, so the old secret is gone.
-        self.assertNotIn(first.stdout.strip(), (self.home / ".ha-webapp-auth").read_text())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(len(lines), 2, result.stdout)
+        self.assertTrue(lines[0].startswith("scrypt$"))
+        self.assertEqual(lines[1], "c2VjcmV0LXNlY3JldA==")
+        # The password travels on stdin, never as an argument (ps, /proc/cmdline).
+        stdin_seen = Path(str(self.record) + ".stdin").read_text()
+        self.assertEqual(stdin_seen, "first-password")
+        self.assertNotIn("first-password", " ".join(self.raw_calls()))
+
+    def test_config_writes_never_carry_the_signing_secret(self) -> None:
+        result = self.run_lib(
+            f'ENABLE_WEBAPP=true\nwebapp_configure {shlex.quote(str(self.home))}\n',
+            env={"FAKE_SECRET": "existing-secret"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("existing-secret", " ".join(self.raw_calls()))
+        self.assertNotIn("dashboard.basic_auth", " ".join(self.raw_calls()))
+
+    def test_disabling_skips_the_cli_when_the_profile_never_had_a_block(self) -> None:
+        skipped = self.run_lib(
+            f'ENABLE_WEBAPP=false\nwebapp_configure {shlex.quote(str(self.home))}\n',
+        )
+
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+        # No CLI start on boot for users who never enabled the Webapp.
+        self.assertEqual(self.calls(), [])
 
     def test_disabling_clears_only_a_block_that_is_switched_on(self) -> None:
+        (self.home / "config.yaml").write_text("webapp:\n  enabled: true\n")
         off_unset = self.run_lib(
             f'ENABLE_WEBAPP=false\nwebapp_configure {shlex.quote(str(self.home))}\n',
             env={"FAKE_ENABLED": "False"},
@@ -305,7 +324,9 @@ class ConfigureTests(WebappLibraryTestCase):
 
     def test_cli_is_pinned_away_from_a_sticky_interactive_profile(self) -> None:
         # HERMES_HOME at a machine root follows `hermes profile use`; the pin
-        # resolves to that same root.
+        # resolves to that same root. A configured Webapp block is what makes
+        # the entrypoint consult the CLI at all.
+        (self.home / "config.yaml").write_text("webapp:\n  enabled: false\n")
         self.run_lib(
             f'ENABLE_WEBAPP=false\nwebapp_configure {shlex.quote(str(self.home))}\n',
         )
@@ -313,6 +334,7 @@ class ConfigureTests(WebappLibraryTestCase):
 
         profile_home = self.root / "profiles" / "amy"
         (profile_home / "logs").mkdir(parents=True)
+        (profile_home / "config.yaml").write_text("webapp:\n  enabled: false\n")
         self.record.write_text("")
         self.run_lib(
             f'ENABLE_WEBAPP=false\nwebapp_configure {shlex.quote(str(profile_home))}\n',
@@ -320,17 +342,18 @@ class ConfigureTests(WebappLibraryTestCase):
         self.assertTrue(self.raw_calls())
         self.assertFalse(any(call.startswith("-p ") for call in self.raw_calls()))
 
-    def test_password_hash_is_byte_exact_and_never_echoed(self) -> None:
-        # The provider strips surrounding whitespace; nginx does not. A hash of
-        # the exact configured bytes keeps both on the same credential.
+    def test_password_reaches_the_helper_byte_exact_on_stdin(self) -> None:
+        # The provider strips surrounding whitespace; nginx does not. The helper
+        # must see the configured bytes, and never through argv (ps).
         password = "  padded password  "
         result = self.run_lib(
-            f'ENABLE_WEBAPP=true\nwebapp_password_hash {shlex.quote(str(self.home))}\n',
-            env={"ACCESS_PASSWORD": password, "STUB_HASH": "scrypt$stub$hash", "STUB_READ_STDIN": "1"},
+            f'ENABLE_WEBAPP=true\nwebapp_auth_state {shlex.quote(str(self.home))}\n',
+            env={"ACCESS_PASSWORD": password, "STUB_HASH": "scrypt$stub$hash\nstub-secret",
+                 "STUB_READ_STDIN": "1"},
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "scrypt$stub$hash")
+        self.assertEqual(result.stdout, "scrypt$stub$hash\nstub-secret")
         self.assertEqual((self.root / "record.txt.stdin").read_text(), password)
         self.assertNotIn(password, "\n".join(self.raw_calls()))
 
@@ -457,12 +480,10 @@ class RunScriptWiringTests(unittest.TestCase):
         self.assertNotIn("HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH", self.script[:start])
 
     def test_credentials_are_prepared_once_before_the_gateways(self) -> None:
-        hashed = self.script.index('WEBAPP_PASSWORD_HASH=$(webapp_password_hash')
-        secret = self.script.index('WEBAPP_AUTH_SECRET=$(webapp_auth_secret')
+        prepared = self.script.index('WEBAPP_AUTH_STATE=$(webapp_auth_state "${PROFILE_HOMES[0]}"')
         first_gateway = self.script.index('for i in "${!PROFILE_DIRS[@]}"; do\n    start_gateway_signal_safe')
 
-        self.assertLess(hashed, first_gateway)
-        self.assertLess(secret, first_gateway)
+        self.assertLess(prepared, first_gateway)
         self.assertIn('case "$WEBAPP_PASSWORD_HASH" in', self.script)
         self.assertIn("scrypt", self.script)
         self.assertIn('export HERMES_DASHBOARD_BASIC_AUTH_SECRET="$WEBAPP_AUTH_SECRET"', self.script)

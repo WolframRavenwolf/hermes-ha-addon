@@ -32,6 +32,7 @@ EXPECTED_BACKUP_EXCLUDE = [
     ".cache",
     ".npm",
     ".hermes/hermes-agent/.build",
+    ".hermes/cache/pnpm",
 ]
 
 
