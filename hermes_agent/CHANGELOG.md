@@ -4,6 +4,14 @@ All notable changes to the Hermes Agent Home Assistant add-on are documented her
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions match the add-on `version` in `config.yaml`.
 
+## [1.3.14] - 2026-11-27
+
+### Fixed
+- Let `auto_update` apply source updates when the add-on's own dashboard compatibility patches are the only local changes. Their content is verified byte for byte against the add-on's patcher run on the committed files; they are then restored before the update and re-applied after it in the same start. User edits, including edits to patched files, staged changes and untracked files still hold the update. An already current checkout keeps its patches, so startup does not rebuild the dashboard. Addresses #64.
+
+### Verification
+- Isolated unit discovery: 224 passed, 3 skipped (Linux prctl, local nginx syntax and opt-in Docker nginx runtime checks), including real-Git tests for patch-only, user-edited, staged, untracked, unverifiable, already current, diverged and conflicted checkouts. No container, Raspberry Pi or Home Assistant Supervisor test was performed.
+
 ## [1.3.13] - 2026-11-25
 
 ### Fixed
