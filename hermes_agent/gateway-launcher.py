@@ -22,6 +22,19 @@ _HANDOFF = {
 _EXTERNAL_SUPERVISOR_FLAG = "--external-supervisor"
 _GATEWAY_PARSER_MODULE = "hermes_cli.subcommands.gateway"
 
+# The dashboard/Webapp sign-in settings must stay the add-on's decision while
+# Hermes loads its environment layers: basic._settings() prefers an env plaintext
+# password over the add-on's exact hash, and the in-memory hash it builds instead
+# is salted afresh, which ends every session on a restart (credential_id).
+# Unlike _HANDOFF these are optional: only the primary gateway serves the Webapp.
+_AUTH_HASH_ENV = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"
+_AUTH_ENV_KEYS = (
+    "HERMES_DASHBOARD_BASIC_AUTH_USERNAME",
+    _AUTH_HASH_ENV,
+    "HERMES_DASHBOARD_BASIC_AUTH_SECRET",
+)
+_AUTH_PASSWORD_ENV = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD"
+
 
 def _code_contains_external_supervisor(code: CodeType) -> bool:
     """Detect the exact CLI feature in parser bytecode, including nested code."""
@@ -85,6 +98,27 @@ def _capture_protected_values() -> dict[str, str]:
     }
 
 
+def _capture_auth_values(protected: dict[str, str]) -> None:
+    """Keep the add-on's sign-in settings and drop a colliding env password."""
+    for key in _AUTH_ENV_KEYS:
+        value = os.environ.pop(key, None)
+        if value is not None:
+            protected[key] = value
+    if _AUTH_HASH_ENV in protected:
+        os.environ.pop(_AUTH_PASSWORD_ENV, None)
+
+
+def _reapply_protected(protected: dict[str, str]) -> None:
+    """Restore the add-on values after an env layer has been loaded."""
+    os.environ.update(protected)
+    if _AUTH_HASH_ENV in protected:
+        # Any env password would be re-hashed in memory and end sessions; an
+        # empty value would fall back to a config password, so the key is
+        # removed. Without a Webapp hash the env password is the operator's own
+        # setting and stays untouched.
+        os.environ.pop(_AUTH_PASSWORD_ENV, None)
+
+
 def _guard_env_loader(env_loader: Any, protected: dict[str, str]) -> None:
     """Reload normal Hermes sources while keeping protected API values fixed."""
     project_env = Path(env_loader.__file__).resolve().parents[1] / ".env"
@@ -92,13 +126,13 @@ def _guard_env_loader(env_loader: Any, protected: dict[str, str]) -> None:
     try:
         original_load(project_env=project_env)
     finally:
-        os.environ.update(protected)
+        _reapply_protected(protected)
 
     def load_protected_env(*args: Any, **kwargs: Any) -> Any:
         try:
             return original_load(*args, **kwargs)
         finally:
-            os.environ.update(protected)
+            _reapply_protected(protected)
 
     env_loader.load_hermes_dotenv = load_protected_env
 
@@ -113,6 +147,9 @@ def _guard_gateway_config(gateway_config: Any, protected: dict[str, str]) -> Non
 
     def load_protected_gateway_config(*args: Any, **kwargs: Any) -> Any:
         config = original_load(*args, **kwargs)
+        # Last point before the auth providers are discovered: a config or env
+        # reader inside this load must not leave a foreign sign-in setting.
+        _reapply_protected(protected)
         config.multiplex_profiles = False
         api_server = gateway_config.Platform.API_SERVER
         if not enabled:
@@ -253,6 +290,7 @@ def main() -> None:
     _activate_pm_dependencies()
     _restore_gateway_command_identity()
     protected = _capture_protected_values()
+    _capture_auth_values(protected)
 
     from hermes_cli import env_loader  # type: ignore[import-not-found]
 
